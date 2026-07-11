@@ -1,4 +1,3 @@
-import os
 from datetime import (
     datetime,
     timedelta,
@@ -8,11 +7,16 @@ from datetime import (
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
+from app.config import get_settings
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-JWT_SECRET = os.getenv("JWT_SECRET", "change-me-to-a-real-secret")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
+
+
+def _jwt_secret() -> str:
+    return get_settings().jwt_secret
 
 
 def hash_password(password: str) -> str:
@@ -30,7 +34,7 @@ def create_access_token(student_id: str, role: str = "student") -> str:
         "role": role,
         "exp": expire,
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return jwt.encode(payload, _jwt_secret(), algorithm=JWT_ALGORITHM)
 
 
 def decode_access_token(token: str) -> str:
@@ -43,4 +47,4 @@ def decode_access_token(token: str) -> str:
 
 
 def decode_token_payload(token: str) -> dict:
-    return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    return jwt.decode(token, _jwt_secret(), algorithms=[JWT_ALGORITHM])
