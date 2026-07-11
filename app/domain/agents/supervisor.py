@@ -3,7 +3,7 @@ from app.domain.agents.types import (
     AgentState,
 )
 from app.domain.models import Intent
-from app.ports.interfaces import LLMPort
+from app.ports.llm_port import LLMPort
 
 
 _VALID_INTENTS = {intent.value for intent in Intent}

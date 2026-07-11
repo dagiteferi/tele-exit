@@ -12,10 +12,8 @@ from app.domain.prompts import (
     NO_WEAK_TOPICS_TO_SCHEDULE,
     planner_scheduled_message,
 )
-from app.ports.interfaces import (
-    CalendarPort,
-    RepositoryPort,
-)
+from app.ports.calendar_port import CalendarPort
+from app.ports.repository_port import RepositoryPort
 
 
 DEFAULT_STUDY_MINUTES = 30

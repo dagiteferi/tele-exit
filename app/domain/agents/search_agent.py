@@ -8,10 +8,8 @@ from app.domain.prompts import (
     format_search_result,
     search_user_prompt,
 )
-from app.ports.interfaces import (
-    LLMPort,
-    WebSearchPort,
-)
+from app.ports.llm_port import LLMPort
+from app.ports.web_search_port import WebSearchPort
 
 
 class SearchAgent:

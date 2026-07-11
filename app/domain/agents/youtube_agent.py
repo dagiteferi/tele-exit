@@ -6,10 +6,8 @@ from app.domain.prompts import (
     YOUTUBE_SYSTEM,
     youtube_user_prompt,
 )
-from app.ports.interfaces import (
-    LLMPort,
-    VideoSearchPort,
-)
+from app.ports.llm_port import LLMPort
+from app.ports.video_search_port import VideoSearchPort
 
 
 class YouTubeAgent:

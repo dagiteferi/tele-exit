@@ -13,7 +13,7 @@ from app.domain.models import (
     TopicScore,
 )
 from app.domain.prompts import memory_status_message
-from app.ports.interfaces import RepositoryPort
+from app.ports.repository_port import RepositoryPort
 
 
 def _profile_from_dict(data: dict) -> LearnerProfile:

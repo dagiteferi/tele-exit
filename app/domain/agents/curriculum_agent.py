@@ -8,11 +8,9 @@ from app.domain.prompts import (
     curriculum_user_prompt,
     format_curriculum_match,
 )
-from app.ports.interfaces import (
-    EmbeddingPort,
-    LLMPort,
-    VectorStorePort,
-)
+from app.ports.embedding_port import EmbeddingPort
+from app.ports.llm_port import LLMPort
+from app.ports.vector_store_port import VectorStorePort
 
 
 class CurriculumAgent:
