@@ -8,7 +8,14 @@ from app.core.di import (
     build_container,
     reset_container,
 )
-from app.routes.question_routes import router as question_router
+from app.routes import (
+    auth_router,
+    question_router,
+    report_router,
+    student_router,
+    ws_router,
+)
+from app.schemas import HealthResponse
 
 
 @asynccontextmanager
@@ -29,11 +36,15 @@ def create_app() -> FastAPI:
         version=settings.app_version,
         lifespan=lifespan,
     )
+    app.include_router(auth_router)
     app.include_router(question_router)
+    app.include_router(student_router)
+    app.include_router(report_router)
+    app.include_router(ws_router)
 
-    @app.get("/health")
+    @app.get("/health", response_model=HealthResponse)
     async def health():
-        return {"status": "ok"}
+        return HealthResponse()
 
     return app
 

@@ -4,7 +4,10 @@ from datetime import (
     timezone,
 )
 
-from jose import JWTError, jwt
+from jose import (
+    JWTError,
+    jwt,
+)
 from passlib.context import CryptContext
 
 from app.config import get_settings

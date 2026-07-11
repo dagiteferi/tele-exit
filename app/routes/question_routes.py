@@ -11,11 +11,12 @@ from app.auth.dependencies import get_current_admin
 from app.core.di import get_container
 from app.ingestion.embedding_pipeline import ingest_questions
 from app.ingestion.question_parser import parse_uploaded_file
+from app.schemas import UploadResponse
 
 router = APIRouter(tags=["questions"])
 
 
-@router.post("/questions/upload")
+@router.post("/questions/upload", response_model=UploadResponse)
 async def upload_questions(
     file: UploadFile = File(...),
     admin_id: str = Depends(get_current_admin),
@@ -40,8 +41,8 @@ async def upload_questions(
         container["embedding"],
         container["vector_store"],
     )
-    return {
-        "ingested": result.ingested,
-        "skipped": result.skipped,
-        "errors": result.errors,
-    }
+    return UploadResponse(
+        ingested=result.ingested,
+        skipped=result.skipped,
+        errors=result.errors,
+    )
