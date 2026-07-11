@@ -2,71 +2,16 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.adapters.fakes import (
+    FakeEmbedding,
+    FakeLLM,
+    FakeSearch,
+    FakeVectorSearch,
+    FakeVideoSearch,
+)
 
-class FakeLLM:
-    def __init__(
-        self,
-        intent: str = "curriculum",
-        response: str = "fake answer",
-    ) -> None:
-        self.intent = intent
-        self.response = response
-        self.generate_calls: list[tuple[str, str]] = []
-        self.classify_calls: list[str] = []
-
-    async def generate(self, prompt: str, system: str = "") -> str:
-        self.generate_calls.append((prompt, system))
-        return self.response
-
-    async def classify_intent(self, transcript: str) -> str:
-        self.classify_calls.append(transcript)
-        return self.intent
-
-
-class FakeEmbedding:
-    async def embed(self, text: str) -> list[float]:
-        return [float(len(text))]
-
-
-class FakeVectorStore:
-    def __init__(self, matches: list[dict] | None = None) -> None:
-        self.matches = matches or []
-        self.query_calls: list[tuple[str, int]] = []
-        self.stored: list[tuple[Any, list[float]]] = []
-
-    async def store(self, question: Any, embedding: list[float]) -> None:
-        self.stored.append((question, embedding))
-
-    async def query(
-        self, text: str, embedding_port: Any, top_k: int = 3
-    ) -> list[dict]:
-        self.query_calls.append((text, top_k))
-        return self.matches[:top_k]
-
-
-class FakeWebSearch:
-    def __init__(self, results: list[dict] | None = None) -> None:
-        self.results = results if results is not None else []
-        self.calls: list[str] = []
-
-    async def search(self, query: str) -> list[dict]:
-        self.calls.append(query)
-        return self.results
-
-
-class FakeVideoSearch:
-    def __init__(self, video: dict | None = None) -> None:
-        self.video = video or {
-            "title": "Graphs Explained",
-            "url": "https://youtube.com/watch?v=abc",
-            "timestamp": "2:15",
-            "description": "Intro to graphs",
-        }
-        self.calls: list[str] = []
-
-    async def find_video(self, topic: str) -> dict:
-        self.calls.append(topic)
-        return self.video
+FakeWebSearch = FakeSearch
+FakeVectorStore = FakeVectorSearch
 
 
 class FakeCalendar:
@@ -74,7 +19,11 @@ class FakeCalendar:
         self.events: list[dict] = []
 
     async def create_study_event(
-        self, student_id: str, topic: str, start_iso: str, duration_minutes: int
+        self,
+        student_id: str,
+        topic: str,
+        start_iso: str,
+        duration_minutes: int,
     ) -> str:
         event_id = f"evt-{len(self.events) + 1}"
         self.events.append(
@@ -101,9 +50,6 @@ class FakeRepository:
         raise NotImplementedError
 
     async def get_user_by_email(self, email: str) -> dict | None:
-        raise NotImplementedError
-
-    async def get_user_by_id(self, user_id: str) -> dict | None:
         raise NotImplementedError
 
     async def get_profile(self, student_id: str) -> dict:
