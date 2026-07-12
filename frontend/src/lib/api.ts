@@ -657,16 +657,48 @@ export async function practiceChat(
   attemptId: string,
   questionId: string,
   message: string,
-): Promise<string> {
+  opts?: { mode?: "practice" | "voice"; timeoutMs?: number },
+): Promise<{
+  reply: string;
+  agentUsed?: string | null;
+  action?: string | null;
+  video?: { title: string; url: string; timestamp?: string; description?: string } | null;
+}> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 35_000);
+  const timer = setTimeout(() => controller.abort(), opts?.timeoutMs ?? 35_000);
   try {
-    const data = await apiFetch<{ reply: string }>(`/exams/attempts/${attemptId}/chat`, {
+    const data = await apiFetch<{
+      reply: string;
+      agent_used?: string | null;
+      action?: string | null;
+      video?: {
+        title?: string;
+        url?: string;
+        timestamp?: string;
+        description?: string;
+      } | null;
+    }>(`/exams/attempts/${attemptId}/chat`, {
       method: "POST",
-      body: JSON.stringify({ question_id: questionId, message }),
+      body: JSON.stringify({
+        question_id: questionId,
+        message,
+        mode: opts?.mode ?? "practice",
+      }),
       signal: controller.signal,
     });
-    return data.reply;
+    return {
+      reply: data.reply,
+      agentUsed: data.agent_used,
+      action: data.action,
+      video: data.video?.url
+        ? {
+            title: data.video.title || "Video",
+            url: data.video.url,
+            timestamp: data.video.timestamp || "0:00",
+            description: data.video.description || "",
+          }
+        : null,
+    };
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
       throw new ApiError(408, "Study coach timed out — try a shorter question.");

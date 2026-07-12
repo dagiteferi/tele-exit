@@ -14,6 +14,17 @@ _SYSTEM = (
     "Format with Markdown (bold, short numbered lists). For math use $...$ inline LaTeX."
 )
 
+_VOICE_SYSTEM = (
+    "You are Tele-Exit on a live video study call. "
+    "Speak like a real tutor: warm, clear, fast. "
+    "Use ONLY the provided question, choices, correct answer, and explanation. "
+    "Never invent a different correct option. "
+    "Reply in 1–2 short spoken sentences (max ~45 words). "
+    "No markdown, no bullet lists, no LaTeX. "
+    "Prefer a hint or next step unless they ask for the full answer. "
+    "If they say they are ready, ask one focused question about the shared screen."
+)
+
 
 def _format_choices(choices: list[str] | None) -> str:
     if not choices:
@@ -21,24 +32,30 @@ def _format_choices(choices: list[str] | None) -> str:
     return "\n".join(f"- {c}" for c in choices)
 
 
-def grounded_reply(question: dict, message: str) -> str:
+def grounded_reply(question: dict, message: str, *, voice: bool = False) -> str:
     """Instant bank-grounded reply when the LLM is unavailable."""
     answer = (question.get("reference_answer") or "").strip()
     explanation = (question.get("explanation") or "").strip()
     msg = message.lower()
 
     wants_hint = any(w in msg for w in ("hint", "clue", "help", "stuck", "start"))
+    ready = any(w in msg for w in ("ready", "yes", "okay", "ok", "sure", "let's", "lets"))
+
+    if ready:
+        return "Great — what’s your first instinct on this question?"
     if wants_hint and explanation:
         first = explanation.split(".")[0].strip()
-        return f"Hint: focus on this idea — {first}."
+        return f"Hint: focus on this — {first}."
     if wants_hint:
-        return "Hint: eliminate options that contradict the definition in the question stem."
+        return "Hint: eliminate options that contradict the question stem."
 
     if explanation and answer:
+        if voice:
+            return f"The bank answer is {answer}. {explanation.split('.')[0].strip()}."
         return f"Correct answer: {answer}\n\n{explanation}"
     if answer:
-        return f"Correct answer from the exam bank: {answer}"
-    return "I don't have a stored explanation for this item yet — try again in a moment."
+        return f"The correct answer is {answer}."
+    return "I don't have a stored explanation yet — try saying that again."
 
 
 def build_practice_prompt(question: dict, message: str) -> str:
@@ -58,13 +75,23 @@ def build_practice_prompt(question: dict, message: str) -> str:
     )
 
 
-async def coach_reply(llm: LLMPort, question: dict, message: str) -> str:
+async def coach_reply(
+    llm: LLMPort,
+    question: dict,
+    message: str,
+    *,
+    mode: str | None = None,
+) -> str:
     """LLM reply grounded on bank data, with instant fallback."""
+    voice = (mode or "").lower() == "voice"
+    system = _VOICE_SYSTEM if voice else _SYSTEM
     prompt = build_practice_prompt(question, message)
+    if voice:
+        prompt += "\nRespond for spoken video call — short and natural."
     try:
-        text = (await llm.generate(prompt, system=_SYSTEM)).strip()
+        text = (await llm.generate(prompt, system=system)).strip()
         if text:
             return text
     except Exception:
         pass
-    return grounded_reply(question, message)
+    return grounded_reply(question, message, voice=voice)

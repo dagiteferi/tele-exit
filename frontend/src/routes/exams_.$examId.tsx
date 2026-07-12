@@ -11,6 +11,7 @@ import {
   type ExamMode,
   type ExamQuestion,
 } from "@/lib/api";
+import { buildCallOpening, speakNow, warmVoices } from "@/lib/speech";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { StudentShell } from "@/components/StudentShell";
@@ -20,6 +21,7 @@ const searchSchema = z.object({
 });
 
 const CALL_HANDOFF_KEY = "tele-exit-practice-call";
+const SPEECH_STARTED_KEY = "tele-exit-call-speech-started";
 
 type ChatTurn = { who: "you" | "ai"; text: string };
 type AttemptResult = {
@@ -103,6 +105,7 @@ function ExamSessionPage() {
   const isPractice = mode === "practice";
 
   const [attemptId, setAttemptId] = useState<string | null>(null);
+  const [examTitle, setExamTitle] = useState("this exam");
   const [questions, setQuestions] = useState<ExamQuestion[]>([]);
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -132,6 +135,9 @@ function ExamSessionPage() {
       setResult(null);
       setError(null);
       setBooting(false);
+      void getExam(examId, mode as ExamMode)
+        .then((detail) => setExamTitle(detail.exam.title || "this exam"))
+        .catch(() => undefined);
     },
     onError: (err: Error) => {
       setError(err.message);
@@ -162,6 +168,7 @@ function ExamSessionPage() {
                 explanation: fresh.explanation ?? q.explanation,
               };
             });
+            if (detail.exam.title) setExamTitle(detail.exam.title);
           } catch {
             // keep saved questions if refresh fails
           }
@@ -208,6 +215,10 @@ function ExamSessionPage() {
     () => questions.filter((q) => (answers[q.id] || "").trim().length > 0).length,
     [questions, answers],
   );
+
+  useEffect(() => {
+    warmVoices();
+  }, []);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -311,25 +322,49 @@ function ExamSessionPage() {
 
   async function onStudyCall() {
     if (!attemptId || !current) return;
+
+    // Speak first — must stay in the same turn as the button click or browsers mute it.
+    const titleGuess =
+      examTitle && examTitle !== "this exam" ? examTitle : current.topic || "this exam";
+    const welcome = buildCallOpening(titleGuess, index + 1);
+    const startedAt = Date.now();
+    sessionStorage.setItem(SPEECH_STARTED_KEY, String(startedAt));
+    speakNow(welcome);
+
     setCallBusy(true);
     setError(null);
     try {
+      let title = titleGuess;
+      if (!examTitle || examTitle === "this exam") {
+        try {
+          title = (await getExam(examId, "practice")).exam.title || titleGuess;
+          setExamTitle(title);
+        } catch {
+          // keep titleGuess
+        }
+      }
       const call = await startStudyCall(attemptId, current.id);
+      const q = call.question;
+      const welcomeFinal = buildCallOpening(title, index + 1);
       sessionStorage.setItem(
         CALL_HANDOFF_KEY,
         JSON.stringify({
           examId,
+          examTitle: title,
+          welcomeText: welcomeFinal,
+          speechStartedAt: startedAt,
           attemptId,
           roomName: call.roomName,
           accessToken: call.accessToken,
           url: call.url,
           question: {
-            id: call.question.id,
-            topic: call.question.topic,
-            text: call.question.questionText,
+            id: q.id,
+            topic: q.topic,
+            text: q.questionText,
+            choices: q.choices ?? current.choices ?? [],
             index: index + 1,
             total: questions.length,
-            referenceAnswer: call.question.referenceAnswer,
+            referenceAnswer: q.referenceAnswer,
           },
           returnTo: `/exams/${examId}?mode=practice`,
         }),
@@ -337,6 +372,7 @@ function ExamSessionPage() {
       navigate({ to: "/call" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start study call");
+      sessionStorage.removeItem(SPEECH_STARTED_KEY);
     } finally {
       setCallBusy(false);
     }
