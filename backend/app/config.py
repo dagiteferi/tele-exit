@@ -28,6 +28,8 @@ class Settings:
     admin_bootstrap_password: str = ""
     app_name: str = "Tele-Exit"
     app_version: str = "0.1.0"
+    # Comma-separated browser origins allowed to call the API (CORS).
+    cors_origins: tuple[str, ...] = ("http://localhost:3000", "http://127.0.0.1:3000")
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -35,6 +37,13 @@ def _env_bool(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_origins(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    return tuple(part.strip() for part in raw.split(",") if part.strip())
 
 
 @lru_cache(maxsize=1)
@@ -57,6 +66,10 @@ def get_settings() -> Settings:
         admin_bootstrap_password=os.getenv("ADMIN_BOOTSTRAP_PASSWORD", ""),
         app_name=os.getenv("APP_NAME", "Tele-Exit"),
         app_version=os.getenv("APP_VERSION", "0.1.0"),
+        cors_origins=_env_origins(
+            "CORS_ORIGINS",
+            ("http://localhost:3000", "http://127.0.0.1:3000"),
+        ),
     )
 
 

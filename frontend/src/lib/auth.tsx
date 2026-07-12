@@ -7,20 +7,24 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { fetchMe } from "./api";
+import {
+  TOKEN_KEY,
+  USER_KEY,
+  clearStoredSession,
+  getStoredToken,
+} from "./auth-storage";
 
 /**
  * Tele-Exit auth context.
  *
  * SECURITY NOTE — token storage:
- *   The backend is expected to return a JWT on POST /auth/register and
- *   POST /auth/login. The production-safe pattern is an httpOnly cookie
- *   set by the backend so JS cannot read it. Until the backend is wired,
- *   we keep the token in localStorage for the frontend to build against.
- *   Tradeoff: localStorage is readable by any script running on the page,
- *   so it is vulnerable to XSS. Do NOT log the token, do NOT put it in
- *   URLs, and switch to an httpOnly cookie the moment the backend supports
- *   it. The `Authorization: Bearer <token>` header is still attached on
- *   every fetch either way — see src/lib/api.ts.
+ *   Backend returns a JWT on POST /auth/register and POST /auth/login.
+ *   The production-safe pattern is an httpOnly cookie set by the backend.
+ *   Until that exists, the token lives in localStorage so the SPA can send
+ *   `Authorization: Bearer <token>`. localStorage is XSS-readable — never
+ *   log the token, never put it in URLs. On load we revalidate via GET /auth/me
+ *   and clear the session if the token is invalid/expired.
  */
 
 export type Role = "student" | "admin";
@@ -44,27 +48,52 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null);
 
-const TOKEN_KEY = "tx.token";
-const USER_KEY = "tx.user";
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    // Read from browser storage in effect to avoid SSR hydration mismatches.
-    try {
-      const t = localStorage.getItem(TOKEN_KEY);
-      const u = localStorage.getItem(USER_KEY);
-      if (t && u) {
+    let cancelled = false;
+
+    async function restore() {
+      try {
+        const t = localStorage.getItem(TOKEN_KEY);
+        if (!t) return;
+        // Prefer cached user for instant UI, then confirm with /auth/me.
+        const cached = localStorage.getItem(USER_KEY);
+        if (cached && !cancelled) {
+          try {
+            setToken(t);
+            setUser(JSON.parse(cached) as User);
+          } catch {
+            // bad cache; continue to network validation
+          }
+        }
+        const me = await fetchMe(t);
+        if (cancelled) return;
         setToken(t);
-        setUser(JSON.parse(u));
+        setUser(me);
+        try {
+          localStorage.setItem(USER_KEY, JSON.stringify(me));
+        } catch {
+          // ignore
+        }
+      } catch {
+        if (!cancelled) {
+          setToken(null);
+          setUser(null);
+          clearStoredSession();
+        }
+      } finally {
+        if (!cancelled) setReady(true);
       }
-    } catch {
-      // ignore; unauthenticated
     }
-    setReady(true);
+
+    void restore();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const login = useCallback((nextUser: User, nextToken: string) => {
@@ -81,12 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     setUser(null);
     setToken(null);
-    try {
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(USER_KEY);
-    } catch {
-      // ignore
-    }
+    clearStoredSession();
   }, []);
 
   const value = useMemo(
@@ -103,11 +127,4 @@ export function useAuth(): AuthState {
   return ctx;
 }
 
-export function getStoredToken(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
+export { getStoredToken };
