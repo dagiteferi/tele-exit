@@ -120,7 +120,8 @@ class GoogleCalendarAdapter(CalendarPort):
             "start": {"dateTime": start.isoformat(), "timeZone": "UTC"},
             "end": {"dateTime": end.isoformat(), "timeZone": "UTC"},
         }
-        if attendee_email and "@" in attendee_email:
+        if attendee_email and "@" in attendee_email and self.delegated_user:
+            # Service accounts cannot invite attendees without domain-wide delegation.
             body["attendees"] = [{"email": attendee_email.strip()}]
 
         created = (
@@ -128,7 +129,7 @@ class GoogleCalendarAdapter(CalendarPort):
             .insert(
                 calendarId=self.calendar_id,
                 body=body,
-                sendUpdates="all" if attendee_email else "none",
+                sendUpdates="all" if body.get("attendees") else "none",
             )
             .execute()
         )

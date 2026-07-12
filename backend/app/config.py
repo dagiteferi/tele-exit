@@ -91,4 +91,6 @@ def get_settings() -> Settings:
 
 
 def clear_settings_cache() -> None:
+    # Re-read .env so SMTP changes apply after restart / lifespan.
+    load_dotenv(_ENV_FILE, override=True)
     get_settings.cache_clear()
