@@ -1,11 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   listAdminExams,
   listQuestions,
+  getAdminExamDetail,
   uploadExam,
+  type ExamQuestion,
+  type ExamSummary,
   type IngestResult,
+  type QuestionRow,
 } from "@/lib/api";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AdminShell } from "@/components/AdminShell";
@@ -218,70 +222,398 @@ function ExamsAdmin() {
 
       <section className="rounded-md border border-hairline bg-background">
         <div className="flex items-center justify-between border-b border-hairline px-4 py-2 text-xs uppercase tracking-wider text-muted-foreground">
-          <span>Exams by department</span>
-          <span>{exams.data?.length ?? 0}</span>
+          <span>Exam library</span>
+          <span>{exams.data?.length ?? 0} exams</span>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase tracking-wider text-muted-foreground">
-              <tr className="border-b border-hairline">
-                <th className="px-4 py-2 font-normal">Title</th>
-                <th className="px-4 py-2 font-normal">Field</th>
-                <th className="px-4 py-2 font-normal">Year</th>
-                <th className="px-4 py-2 font-normal">Questions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(exams.data ?? []).map((e) => (
-                <tr key={e.id} className="border-b border-hairline">
-                  <td className="px-4 py-2 text-primary">{e.title}</td>
-                  <td className="px-4 py-2">{e.fieldOfStudy}</td>
-                  <td className="px-4 py-2 tabular-nums text-muted-foreground">{e.year ?? "—"}</td>
-                  <td className="px-4 py-2 tabular-nums">{e.questionCount}</td>
-                </tr>
-              ))}
-              {exams.data?.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground">
-                    No exams uploaded yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="p-4">
+          <ExamLibrary exams={exams.data ?? []} loading={exams.isLoading} />
         </div>
       </section>
 
       <section className="rounded-md border border-hairline bg-background">
         <div className="flex items-center justify-between border-b border-hairline px-4 py-2 text-xs uppercase tracking-wider text-muted-foreground">
-          <span>Questions</span>
-          <span>{questions.data?.length ?? 0} rows</span>
+          <span>Browse by topic</span>
+          <span>{questions.data?.length ?? 0} questions</span>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase tracking-wider text-muted-foreground">
-              <tr className="border-b border-hairline">
-                <th className="w-36 px-4 py-2 font-normal">Field</th>
-                <th className="w-36 px-4 py-2 font-normal">Topic</th>
-                <th className="w-20 px-4 py-2 font-normal">Year</th>
-                <th className="px-4 py-2 font-normal">Question</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(questions.data ?? []).map((q) => (
-                <tr key={q.id} className="border-b border-hairline align-top">
-                  <td className="px-4 py-2 text-muted-foreground">{q.fieldOfStudy || "—"}</td>
-                  <td className="px-4 py-2 text-primary">{q.topic}</td>
-                  <td className="px-4 py-2 tabular-nums text-muted-foreground">{q.year}</td>
-                  <td className="px-4 py-2">
-                    <span className="line-clamp-2">{q.question}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="p-4">
+          <TopicBrowser questions={questions.data ?? []} loading={questions.isLoading} />
         </div>
       </section>
+    </div>
+  );
+}
+
+function ExamLibrary({ exams, loading }: { exams: ExamSummary[]; loading: boolean }) {
+  const [query, setQuery] = useState("");
+  const [fieldFilter, setFieldFilter] = useState<string>("all");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [topicFilter, setTopicFilter] = useState<string | null>(null);
+
+  const detail = useQuery({
+    queryKey: ["admin", "exam", selectedId],
+    queryFn: () => getAdminExamDetail(selectedId!),
+    enabled: Boolean(selectedId),
+  });
+
+  const fields = useMemo(() => {
+    const set = new Set(exams.map((e) => e.fieldOfStudy));
+    return [...set].sort();
+  }, [exams]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return exams.filter((e) => {
+      if (fieldFilter !== "all" && e.fieldOfStudy !== fieldFilter) return false;
+      if (!q) return true;
+      return (
+        e.title.toLowerCase().includes(q) ||
+        e.fieldOfStudy.toLowerCase().includes(q) ||
+        String(e.year ?? "").includes(q)
+      );
+    });
+  }, [exams, query, fieldFilter]);
+
+  const topics = useMemo(() => {
+    const qs = detail.data?.questions ?? [];
+    const map = new Map<string, number>();
+    for (const q of qs) {
+      const t = q.topic?.trim() || "Untitled";
+      map.set(t, (map.get(t) || 0) + 1);
+    }
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [detail.data]);
+
+  const visibleQuestions = useMemo(() => {
+    const qs = detail.data?.questions ?? [];
+    if (!topicFilter) return qs;
+    return qs.filter((q) => (q.topic?.trim() || "Untitled") === topicFilter);
+  }, [detail.data, topicFilter]);
+
+  if (loading) return <p className="text-sm text-muted-foreground">Loading exams…</p>;
+  if (exams.length === 0) {
+    return <p className="py-6 text-center text-sm text-muted-foreground">No exams uploaded yet.</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search exams by title, field, year…"
+          className="w-full flex-1 rounded border border-input bg-background px-3 py-2 text-sm"
+        />
+        <select
+          value={fieldFilter}
+          onChange={(e) => setFieldFilter(e.target.value)}
+          className="rounded border border-input bg-background px-3 py-2 text-sm sm:w-56"
+        >
+          <option value="all">All fields ({exams.length})</option>
+          {fields.map((f) => (
+            <option key={f} value={f}>
+              {f}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        Showing {filtered.length} of {exams.length} exams — click one to open details and questions.
+      </p>
+
+      <div className="grid max-h-72 gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
+        {filtered.map((exam) => {
+          const active = selectedId === exam.id;
+          return (
+            <button
+              key={exam.id}
+              type="button"
+              onClick={() => {
+                setSelectedId(active ? null : exam.id);
+                setTopicFilter(null);
+              }}
+              className={
+                "rounded-md border px-3 py-3 text-left transition-colors " +
+                (active
+                  ? "border-primary bg-secondary"
+                  : "border-hairline hover:border-primary/40 hover:bg-secondary/40")
+              }
+            >
+              <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                {exam.fieldOfStudy}
+                {exam.year ? ` · ${exam.year}` : ""}
+              </p>
+              <p className="mt-1 line-clamp-2 text-sm font-medium text-primary">{exam.title}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {exam.questionCount} question{exam.questionCount === 1 ? "" : "s"}
+              </p>
+            </button>
+          );
+        })}
+      </div>
+
+      {selectedId && (
+        <div className="rounded-md border border-hairline">
+          <div className="flex flex-wrap items-start justify-between gap-2 border-b border-hairline px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-primary">
+                {detail.data?.exam.title ?? "Loading exam…"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {detail.data
+                  ? `${detail.data.exam.fieldOfStudy} · ${detail.data.questions.length} questions · ${topics.length} topics`
+                  : "Fetching questions…"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedId(null);
+                setTopicFilter(null);
+              }}
+              className="text-xs text-muted-foreground hover:text-primary"
+            >
+              Close
+            </button>
+          </div>
+
+          {detail.isLoading && (
+            <p className="px-4 py-6 text-sm text-muted-foreground">Loading questions…</p>
+          )}
+          {detail.isError && (
+            <p className="px-4 py-6 text-sm text-destructive">
+              {detail.error instanceof Error ? detail.error.message : "Failed to load exam"}
+            </p>
+          )}
+
+          {detail.data && (
+            <div className="space-y-4 p-4">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTopicFilter(null)}
+                  className={
+                    "rounded-md border px-3 py-1.5 text-sm " +
+                    (topicFilter === null
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-input hover:bg-secondary")
+                  }
+                >
+                  All topics ({detail.data.questions.length})
+                </button>
+                {topics.map(([topic, count]) => (
+                  <button
+                    key={topic}
+                    type="button"
+                    onClick={() => setTopicFilter(topic)}
+                    className={
+                      "rounded-md border px-3 py-1.5 text-sm " +
+                      (topicFilter === topic
+                        ? "border-primary bg-secondary font-medium text-primary"
+                        : "border-input hover:bg-secondary/60")
+                    }
+                  >
+                    {topic} ({count})
+                  </button>
+                ))}
+              </div>
+
+              <ExamQuestionList questions={visibleQuestions} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExamQuestionList({ questions }: { questions: ExamQuestion[] }) {
+  if (questions.length === 0) {
+    return <p className="text-sm text-muted-foreground">No questions in this filter.</p>;
+  }
+  return (
+    <ul className="max-h-96 divide-y divide-hairline overflow-y-auto rounded-md border border-hairline">
+      {questions.map((q, i) => (
+        <li key={q.id} className="px-4 py-3 text-sm">
+          <p className="text-xs text-muted-foreground">
+            #{i + 1} · {q.topic}
+            {q.year ? ` · ${q.year}` : ""}
+          </p>
+          <p className="mt-1 text-foreground">{q.questionText}</p>
+          {q.choices && q.choices.length > 0 && (
+            <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+              {q.choices.map((c) => (
+                <li key={c}>{c}</li>
+              ))}
+            </ul>
+          )}
+          {q.referenceAnswer && (
+            <p className="mt-2 text-xs text-[var(--sage)]">Answer: {q.referenceAnswer}</p>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function TopicBrowser({
+  questions,
+  loading,
+}: {
+  questions: QuestionRow[];
+  loading: boolean;
+}) {
+  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
+  const [selectedField, setSelectedField] = useState<string | null>(null);
+
+  const fields = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const q of questions) {
+      const key = q.fieldOfStudy?.trim() || "Unassigned";
+      map.set(key, (map.get(key) || 0) + 1);
+    }
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [questions]);
+
+  const topics = useMemo(() => {
+    const filtered = selectedField
+      ? questions.filter((q) => (q.fieldOfStudy?.trim() || "Unassigned") === selectedField)
+      : questions;
+    const map = new Map<string, number>();
+    for (const q of filtered) {
+      const key = q.topic?.trim() || "Untitled topic";
+      map.set(key, (map.get(key) || 0) + 1);
+    }
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [questions, selectedField]);
+
+  const visibleQuestions = useMemo(() => {
+    if (!selectedTopic) return [];
+    return questions.filter((q) => {
+      const topic = q.topic?.trim() || "Untitled topic";
+      const field = q.fieldOfStudy?.trim() || "Unassigned";
+      if (topic !== selectedTopic) return false;
+      if (selectedField && field !== selectedField) return false;
+      return true;
+    });
+  }, [questions, selectedTopic, selectedField]);
+
+  if (loading) {
+    return <p className="text-sm text-muted-foreground">Loading questions…</p>;
+  }
+
+  if (questions.length === 0) {
+    return (
+      <p className="py-6 text-center text-sm text-muted-foreground">
+        No questions uploaded yet.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {fields.length > 1 && (
+        <div>
+          <p className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">
+            Department / field
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedField(null);
+                setSelectedTopic(null);
+              }}
+              className={
+                "rounded-md border px-3 py-1.5 text-sm transition-colors " +
+                (selectedField === null
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-input text-primary hover:bg-secondary")
+              }
+            >
+              All ({questions.length})
+            </button>
+            {fields.map(([field, count]) => (
+              <button
+                key={field}
+                type="button"
+                onClick={() => {
+                  setSelectedField(field);
+                  setSelectedTopic(null);
+                }}
+                className={
+                  "rounded-md border px-3 py-1.5 text-sm transition-colors " +
+                  (selectedField === field
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-input text-primary hover:bg-secondary")
+                }
+              >
+                {field} ({count})
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <p className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">Topics</p>
+        <div className="flex flex-wrap gap-2">
+          {topics.map(([topic, count]) => (
+            <button
+              key={topic}
+              type="button"
+              onClick={() => setSelectedTopic((t) => (t === topic ? null : topic))}
+              className={
+                "rounded-md border px-3 py-1.5 text-sm transition-colors " +
+                (selectedTopic === topic
+                  ? "border-primary bg-secondary text-primary font-medium"
+                  : "border-input text-foreground hover:border-primary/50 hover:bg-secondary/60")
+              }
+            >
+              {topic}
+              <span className="ml-1.5 tabular-nums text-muted-foreground">({count})</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {selectedTopic ? (
+        <div className="rounded-md border border-hairline">
+          <div className="flex items-center justify-between border-b border-hairline px-4 py-2">
+            <p className="text-sm font-medium text-primary">{selectedTopic}</p>
+            <button
+              type="button"
+              onClick={() => setSelectedTopic(null)}
+              className="text-xs text-muted-foreground hover:text-primary"
+            >
+              Close
+            </button>
+          </div>
+          <ul className="divide-y divide-hairline">
+            {visibleQuestions.map((q, i) => (
+              <li key={q.id} className="px-4 py-3 text-sm">
+                <p className="text-xs text-muted-foreground">
+                  #{i + 1}
+                  {q.year ? ` · ${q.year}` : ""}
+                  {q.fieldOfStudy ? ` · ${q.fieldOfStudy}` : ""}
+                </p>
+                <p className="mt-1 text-foreground">{q.question}</p>
+                {q.choices && q.choices.length > 0 && (
+                  <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+                    {q.choices.map((c) => (
+                      <li key={c}>{c}</li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Select a topic to view its questions.
+        </p>
+      )}
     </div>
   );
 }
