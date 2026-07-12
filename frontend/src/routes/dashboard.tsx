@@ -81,16 +81,16 @@ function Dashboard() {
       {/* Primary CTA */}
       <section>
         <Link
-          to="/call"
+          to="/exams"
           className="group flex w-full items-center justify-between rounded-xl bg-primary px-6 py-5 text-primary-foreground transition-colors hover:bg-primary/90"
         >
-          <span className="font-display text-2xl">Start practice call</span>
+          <span className="font-display text-2xl">Browse exams</span>
           <span aria-hidden className="text-2xl text-[var(--amber)] transition-transform group-hover:translate-x-1">
             →
           </span>
         </Link>
         <p className="mt-2 text-xs text-muted-foreground">
-          A live one-on-one session, about 20–30 minutes.
+          Practice with answers and AI, or take a scored exam for your department.
         </p>
       </section>
 

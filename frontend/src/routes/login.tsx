@@ -48,7 +48,7 @@ function LoginPage() {
     try {
       const { user, token } = await loginStudent(parsed.data.email, parsed.data.password);
       login(user, token);
-      navigate({ to: user.role === "admin" ? "/admin/questions" : "/dashboard" });
+      navigate({ to: user.role === "admin" ? "/admin/users" : "/dashboard" });
     } catch (err) {
       setSubmitError(
         err instanceof Error
