@@ -28,12 +28,53 @@ export function pickEnglishVoice(): SpeechSynthesisVoice | null {
 
 export function buildCallOpening(examTitle: string, questionIndex: number): string {
   const name = (examTitle || "").trim() || "this exam";
-  return (
-    `Hi! Welcome to your study call. Let's work through ${name}. ` +
-    `Give me a second — let me share my screen so you can see the exam question. ` +
-    `Alright, sharing now. Here's question ${questionIndex}. ` +
-    `Take a look at the screen, and tell me when you're ready.`
-  );
+  const q = questionIndex;
+
+  const openings = [
+    `Hey! Great to see you. Let's jump into ${name}. I'll share my screen so you can see question ${q}. Take a look, and tell me when you're ready.`,
+    `Welcome back. Today we're working through ${name}. Give me a moment to share the exam paper — here's question ${q}. What stands out to you first?`,
+    `Hi there — ready to practice? We'll tackle ${name} together. I'm sharing my screen now with question ${q}. Tell me your first instinct whenever you're set.`,
+    `Let's get started on ${name}. I'll pull up the shared screen so you can see question ${q}. No pressure — walk me through how you'd begin.`,
+    `Nice timing. For ${name}, I'm sharing question ${q} on screen. Glance at it, then unmute and talk me through your thinking.`,
+    `Alright, study call is live. We'll focus on ${name}, starting at question ${q}. Screen share coming up — are you ready to reason out loud?`,
+    `Hello! I've got ${name} ready. Let me share my screen and show you question ${q}. When you're ready, tell me how you'd approach it.`,
+    `Good to have you here. Let's practice ${name} from question ${q}. I'm sharing the question now — take a breath, then say what you'd try first.`,
+  ];
+
+  // Prefer variety across calls; avoid always picking index 0.
+  const pick =
+    (Date.now() + q * 17 + Math.floor(Math.random() * openings.length)) % openings.length;
+  return openings[pick] ?? openings[0];
+}
+
+export function buildShareLine(questionIndex: number): string {
+  const lines = [
+    `Let me share my screen so you can see question ${questionIndex}…`,
+    `Sharing the exam paper now — question ${questionIndex} coming up…`,
+    `One sec — putting question ${questionIndex} on the shared screen…`,
+    `Okay, presenting my screen with question ${questionIndex}…`,
+  ];
+  return lines[(Date.now() + questionIndex) % lines.length] ?? lines[0];
+}
+
+export function buildReadyLine(questionIndex: number): string {
+  const lines = [
+    `Here's question ${questionIndex}. Unmute and talk — you'll see your words on screen.`,
+    `Question ${questionIndex} is on the shared screen. When you're ready, say your first thought out loud.`,
+    `Take a look at question ${questionIndex}. Unmute anytime and walk me through it.`,
+    `Question ${questionIndex} is up. Tell me what you'd try first — I'm listening.`,
+  ];
+  return lines[(Date.now() + questionIndex * 3) % lines.length] ?? lines[0];
+}
+
+export function buildJoiningLine(): string {
+  const lines = [
+    "Welcome — connecting your study call…",
+    "Joining your coach now…",
+    "Setting up your live study session…",
+    "Almost in — connecting to your AI coach…",
+  ];
+  return lines[Date.now() % lines.length] ?? lines[0];
 }
 
 /** @deprecated use buildCallOpening */
