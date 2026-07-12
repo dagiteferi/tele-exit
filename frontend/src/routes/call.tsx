@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getMyProfile, practiceChat } from "@/lib/api";
+import { getExam, getMyProfile, practiceChat } from "@/lib/api";
 import {
   buildCallOpening,
   buildJoiningLine,
@@ -73,40 +73,45 @@ function readHandoff(): PracticeCallHandoff | null {
   }
 }
 
+function buildDeckFromHandoff(handoff: PracticeCallHandoff | null): QuestionCard[] {
+  if (handoff?.questions?.length) {
+    return handoff.questions.map((q, i) => ({
+      ...q,
+      index: q.index || i + 1,
+      total: handoff.questions!.length,
+      choices: q.choices ?? [],
+    }));
+  }
+  if (handoff?.question) {
+    return [
+      {
+        ...handoff.question,
+        choices: handoff.question.choices ?? [],
+      },
+    ];
+  }
+  return [
+    {
+      index: 1,
+      total: 1,
+      topic: "Study call",
+      text: "Walk me through how you’d approach this topic out loud.",
+      choices: [],
+    },
+  ];
+}
+
 function CallScreen() {
   const navigate = useNavigate();
   const profile = useQuery({ queryKey: ["profile"], queryFn: getMyProfile });
   const handoff = useRef(readHandoff()).current;
   const examTitle = handoff?.examTitle?.trim() || "Practice exam";
   const attemptId = handoff?.attemptId || "";
+  const examId = handoff?.examId || "";
 
-  const deck: QuestionCard[] = useMemo(() => {
-    if (handoff?.questions?.length) {
-      return handoff.questions.map((q, i) => ({
-        ...q,
-        index: q.index || i + 1,
-        total: handoff.questions!.length,
-        choices: q.choices ?? [],
-      }));
-    }
-    if (handoff?.question) {
-      return [
-        {
-          ...handoff.question,
-          choices: handoff.question.choices ?? [],
-        },
-      ];
-    }
-    return [
-      {
-        index: 1,
-        total: 1,
-        topic: "Study call",
-        text: "Walk me through how you’d approach this topic out loud.",
-        choices: [],
-      },
-    ];
-  }, [handoff]);
+  const [deck, setDeck] = useState<QuestionCard[]>(() => buildDeckFromHandoff(handoff));
+  const deckRef = useRef(deck);
+  deckRef.current = deck;
 
   const [cursor, setCursor] = useState(() =>
     Math.min(Math.max(handoff?.questionIndex ?? 0, 0), Math.max(deck.length - 1, 0)),
@@ -117,7 +122,63 @@ function CallScreen() {
   const questionId = question?.id || `idx-${cursor}`;
   const questionIdRef = useRef(questionId);
   questionIdRef.current = questionId;
-  const goToQuestionRef = useRef<(nextCursor: number) => boolean>(() => false);
+  const goToQuestionRef = useRef<
+    (nextCursor: number, opts?: { speak?: boolean; wrap?: boolean }) => boolean
+  >(() => false);
+
+  // Always load the full exam bank so large sets (e.g. 94 Qs) stay browsable.
+  useEffect(() => {
+    if (!examId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const detail = await getExam(examId, "practice");
+        if (cancelled || !detail.questions.length) return;
+        const next = detail.questions.map((item, i) => ({
+          id: item.id,
+          topic: item.topic,
+          text: item.questionText,
+          choices: item.choices ?? [],
+          index: i + 1,
+          total: detail.questions.length,
+          referenceAnswer: item.referenceAnswer ?? null,
+        }));
+        const prevId = questionIdRef.current;
+        setDeck(next);
+        const keep = next.findIndex((q) => q.id && q.id === prevId);
+        if (keep >= 0) {
+          cursorRef.current = keep;
+          setCursor(keep);
+        } else if (cursorRef.current >= next.length) {
+          const clamped = Math.max(0, next.length - 1);
+          cursorRef.current = clamped;
+          setCursor(clamped);
+        }
+        try {
+          const raw = sessionStorage.getItem(CALL_HANDOFF_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw) as PracticeCallHandoff;
+            sessionStorage.setItem(
+              CALL_HANDOFF_KEY,
+              JSON.stringify({
+                ...parsed,
+                questions: next,
+                questionIndex: keep >= 0 ? keep : cursorRef.current,
+                question: next[keep >= 0 ? keep : cursorRef.current],
+              }),
+            );
+          }
+        } catch {
+          // ignore quota / parse issues — in-memory deck is enough
+        }
+      } catch {
+        // keep handoff deck
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [examId]);
 
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(true);
@@ -168,21 +229,29 @@ function CallScreen() {
 
   const pushTurn = useCallback((who: "agent" | "you", text: string, forQuestionId?: string) => {
     const key = forQuestionId || questionIdRef.current || "q0";
-    setChatByQuestion((prev) => ({
-      ...prev,
-      [key]: [
+    setChatByQuestion((prev) => {
+      const next = [
         ...(prev[key] || []),
         { id: `t-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, who, text },
-      ],
-    }));
+      ];
+      return { ...prev, [key]: next.slice(-40) };
+    });
   }, []);
 
   const goToQuestion = useCallback(
-    (nextCursor: number) => {
-      if (nextCursor < 0 || nextCursor >= deck.length) return false;
+    (rawCursor: number, opts?: { speak?: boolean; wrap?: boolean }) => {
+      const list = deckRef.current;
+      if (!list.length) return false;
+      let nextCursor = rawCursor;
+      if (opts?.wrap && list.length > 1) {
+        if (nextCursor < 0) nextCursor = list.length - 1;
+        else if (nextCursor >= list.length) nextCursor = 0;
+      }
+      if (nextCursor < 0 || nextCursor >= list.length) return false;
       if (nextCursor === cursorRef.current) return false;
-      const q = deck[nextCursor];
+      const q = list[nextCursor];
       const qid = q.id || `idx-${nextCursor}`;
+      const speak = opts?.speak !== false;
       questionIdRef.current = qid;
       cursorRef.current = nextCursor;
       lastCorrectRef.current = false;
@@ -193,38 +262,44 @@ function CallScreen() {
       followUpRef.current = "";
       pendingSpeechRef.current = "";
       setLiveCaption("");
+      replyLockRef.current = false;
+      setCoachBusy(false);
 
-      const line = `Okay — now looking at question ${q.index} of ${q.total}. Ask me about this one on the shared screen.`;
+      const wrapped =
+        opts?.wrap &&
+        ((rawCursor >= list.length && nextCursor === 0) ||
+          (rawCursor < 0 && nextCursor === list.length - 1));
+      const line = wrapped
+        ? `Back around to question ${q.index} of ${q.total}. Ready when you are.`
+        : `Question ${q.index} of ${q.total}.`;
+
       setChatByQuestion((prev) => {
         const existing = prev[qid] || [];
-        if (existing.length > 0) {
-          return {
-            ...prev,
-            [qid]: [
-              ...existing,
-              {
-                id: `t-jump-${Date.now()}`,
-                who: "agent",
-                text: line,
-              },
-            ],
-          };
-        }
-        return {
-          ...prev,
-          [qid]: [{ id: `t-open-${qid}`, who: "agent", text: line }],
-        };
+        const nextTurns =
+          existing.length > 0
+            ? [
+                ...existing,
+                { id: `t-jump-${Date.now()}`, who: "agent" as const, text: line },
+              ]
+            : [{ id: `t-open-${qid}`, who: "agent" as const, text: line }];
+        // Cap history so browsing a large exam stays smooth.
+        return { ...prev, [qid]: nextTurns.slice(-40) };
       });
+
       cancelSpeakRef.current?.();
       window.speechSynthesis?.cancel();
-      setSpeaking(true);
-      cancelSpeakRef.current = speakNow(forSpeech(line), {
-        onStart: () => setSpeaking(true),
-        onEnd: () => setSpeaking(false),
-      });
+      if (speak) {
+        setSpeaking(true);
+        cancelSpeakRef.current = speakNow(forSpeech(line), {
+          onStart: () => setSpeaking(true),
+          onEnd: () => setSpeaking(false),
+        });
+      } else {
+        setSpeaking(false);
+      }
       return true;
     },
-    [deck],
+    [],
   );
   goToQuestionRef.current = goToQuestion;
 
@@ -258,14 +333,15 @@ function CallScreen() {
               : nav.kind === "prev"
                 ? cursorRef.current - 1
                 : nav.index;
-          const moved = goToQuestionRef.current(target);
+          const moved = goToQuestionRef.current(target, {
+            speak: true,
+            wrap: nav.kind === "next" || nav.kind === "prev",
+          });
           if (!moved) {
             const edge =
-              nav.kind === "next" || (nav.kind === "goto" && target >= deck.length)
-                ? "You're already on the last question — want a hint on this one instead?"
-                : nav.kind === "prev" || (nav.kind === "goto" && target < 0)
-                  ? "You're already on the first question. Want to dig into this one?"
-                  : "I couldn't jump there — try Previous / Next on the shared screen.";
+              nav.kind === "goto"
+                ? "I couldn't jump there — try the question picker on the shared screen."
+                : "Stay with this one a moment, or pick another question on the shared screen.";
             pushTurn("agent", edge, questionIdRef.current);
             cancelSpeakRef.current?.();
             setSpeaking(true);
@@ -388,6 +464,23 @@ function CallScreen() {
 
   askCoachRef.current = askCoach;
   queueUserSpeechRef.current = queueUserSpeech;
+
+  // Arrow keys browse the full deck without waiting on speech.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "ArrowRight" || e.key === "PageDown") {
+        e.preventDefault();
+        goToQuestionRef.current(cursorRef.current + 1, { speak: false, wrap: true });
+      } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+        e.preventDefault();
+        goToQuestionRef.current(cursorRef.current - 1, { speak: false, wrap: true });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     warmVoices();
@@ -673,7 +766,7 @@ function CallScreen() {
               </span>
               <span aria-hidden>·</span>
               <span>
-                Question {question.index} of {question.total}
+                Question {question.index} of {deck.length}
               </span>
             </p>
           </div>
@@ -727,7 +820,7 @@ function CallScreen() {
                     : `${examTitle} · Q${question.index}`}
               </p>
               <span className="rounded-full bg-[var(--amber)]/20 px-2.5 py-0.5 text-[11px] font-semibold text-[var(--amber-strong)]">
-                Q{question.index}/{question.total}
+                Q{question.index}/{deck.length}
               </span>
             </div>
 
@@ -777,7 +870,7 @@ function CallScreen() {
                     </div>
                     <div className="rounded-md border border-black/10 bg-white/80 px-3 py-1.5 text-right text-xs text-[#4a5564]">
                       <p className="font-semibold text-[#1c2430]">
-                        Question {question.index} of {question.total}
+                        Question {question.index} of {deck.length}
                       </p>
                       <p className="mt-0.5 text-[10px] uppercase tracking-wider">Live share</p>
                     </div>
@@ -888,25 +981,41 @@ function CallScreen() {
                     </ul>
                   )}
 
-                  {/* Jump between exam questions on the shared screen */}
+                  {/* Jump between every exam question — no dead ends */}
                   {deck.length > 1 && (
                     <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-black/10 pt-4">
                       <button
                         type="button"
-                        disabled={cursor <= 0}
-                        onClick={() => goToQuestion(cursor - 1)}
-                        className="rounded-lg border border-black/15 bg-white/90 px-4 py-2 text-sm font-medium text-[#1c2430] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                        onClick={() =>
+                          goToQuestion(cursor - 1, { speak: false, wrap: true })
+                        }
+                        className="rounded-lg border border-black/15 bg-white/90 px-4 py-2 text-sm font-medium text-[#1c2430] transition-colors hover:bg-white"
                       >
                         ← Previous
                       </button>
-                      <p className="text-xs text-[#5b6573]">
-                        Q{question.index} / {question.total}
-                      </p>
+                      <label className="flex items-center gap-2 text-xs text-[#5b6573]">
+                        <span className="sr-only">Jump to question</span>
+                        <select
+                          value={cursor}
+                          onChange={(e) =>
+                            goToQuestion(Number(e.target.value), { speak: false })
+                          }
+                          className="rounded-md border border-black/15 bg-white px-2 py-1.5 text-sm font-medium text-[#1c2430]"
+                        >
+                          {deck.map((q, i) => (
+                            <option key={q.id || i} value={i}>
+                              Q{q.index} / {deck.length}
+                              {q.topic ? ` · ${q.topic.slice(0, 28)}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                       <button
                         type="button"
-                        disabled={cursor >= deck.length - 1}
-                        onClick={() => goToQuestion(cursor + 1)}
-                        className="rounded-lg border border-black/15 bg-white/90 px-4 py-2 text-sm font-medium text-[#1c2430] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                        onClick={() =>
+                          goToQuestion(cursor + 1, { speak: false, wrap: true })
+                        }
+                        className="rounded-lg border border-black/15 bg-white/90 px-4 py-2 text-sm font-medium text-[#1c2430] transition-colors hover:bg-white"
                       >
                         Next →
                       </button>
