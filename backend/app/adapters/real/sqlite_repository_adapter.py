@@ -143,10 +143,18 @@ class SQLiteRepositoryAdapter(RepositoryPort):
                 weak_topics.append(row["topic"])
 
         readiness = _readiness_percent(topic_scores, weak_topics)
+        weak_topics.sort(
+            key=lambda topic: topic_scores.get(topic, {}).get("accuracy", 1.0),
+        )
         return {
             "student_id": student_id,
             "email": user["email"],
-            "weak_topics": sorted(weak_topics),
+            "name": user["name"],
+            "field_of_study": user["field_of_study"],
+            "exam_date": user["exam_date"],
+            "report_frequency": user["report_frequency"] or "weekly",
+            "role": user["role"] if "role" in user.keys() else "student",
+            "weak_topics": weak_topics,
             "topic_scores": topic_scores,
             "sessions_completed": sessions_completed,
             "last_session_at": last_session_at,
@@ -545,6 +553,42 @@ class SQLiteRepositoryAdapter(RepositoryPort):
             item = dict(row)
             item["answers"] = json.loads(item.pop("answers_json") or "[]")
             results.append(item)
+        return results
+
+    async def list_recent_sessions(self, student_id: str, limit: int = 8) -> list[dict]:
+        """Recent completed exam/practice attempts for the dashboard."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    a.id,
+                    COALESCE(e.title, 'Exam') AS exam_title,
+                    a.mode,
+                    a.score_correct AS correct,
+                    a.score_total AS attempted,
+                    COALESCE(a.completed_at, a.started_at) AS date
+                FROM exam_attempts a
+                LEFT JOIN exams e ON e.id = a.exam_id
+                WHERE a.student_id = ?
+                  AND a.completed_at IS NOT NULL
+                  AND a.score_total > 0
+                ORDER BY datetime(COALESCE(a.completed_at, a.started_at)) DESC
+                LIMIT ?
+                """,
+                (student_id, limit),
+            ).fetchall()
+        results = []
+        for row in rows:
+            mode = str(row["mode"] or "practice").capitalize()
+            results.append(
+                {
+                    "id": row["id"],
+                    "topic": f"{row['exam_title']} · {mode}",
+                    "correct": int(row["correct"]),
+                    "attempted": int(row["attempted"]),
+                    "date": row["date"],
+                }
+            )
         return results
 
 

@@ -56,13 +56,27 @@ class TopicScoreOut(BaseModel):
     accuracy: float
 
 
+class RecentSessionOut(BaseModel):
+    id: str
+    topic: str
+    correct: int
+    attempted: int
+    date: str
+
+
 class ProfileResponse(BaseModel):
     student_id: str
+    name: str
+    email: str
+    field_of_study: Optional[str] = None
+    exam_date: Optional[str] = None
+    report_frequency: Literal["weekly", "monthly"] = "weekly"
     weak_topics: list[str]
     topic_scores: dict[str, TopicScoreOut]
     sessions_completed: int
     last_session_at: Optional[str] = None
     readiness_percent: int = 0
+    recent_sessions: list[RecentSessionOut] = Field(default_factory=list)
 
 
 class SettingsUpdateRequest(BaseModel):

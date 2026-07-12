@@ -16,6 +16,7 @@ from app.schemas import (
     CalendarEventOut,
     OpeningQuestion,
     ProfileResponse,
+    RecentSessionOut,
     SessionEndRequest,
     SessionEndResponse,
     SessionStartResponse,
@@ -46,13 +47,33 @@ async def get_profile(
         )
         for topic, score in (profile.get("topic_scores") or {}).items()
     }
+    recent_rows = await container.repo.list_recent_sessions(student_id)
+    recent = [
+        RecentSessionOut(
+            id=str(row["id"]),
+            topic=str(row["topic"]),
+            correct=int(row["correct"]),
+            attempted=int(row["attempted"]),
+            date=str(row["date"]),
+        )
+        for row in recent_rows
+    ]
+    freq = profile.get("report_frequency") or "weekly"
+    if freq not in ("weekly", "monthly"):
+        freq = "weekly"
     return ProfileResponse(
         student_id=student_id,
+        name=str(profile.get("name") or "Student"),
+        email=str(profile.get("email") or ""),
+        field_of_study=profile.get("field_of_study"),
+        exam_date=profile.get("exam_date"),
+        report_frequency=freq,  # type: ignore[arg-type]
         weak_topics=list(profile.get("weak_topics") or []),
         topic_scores=scores,
         sessions_completed=int(profile.get("sessions_completed", 0)),
         last_session_at=profile.get("last_session_at"),
         readiness_percent=int(profile.get("readiness_percent", 0)),
+        recent_sessions=recent,
     )
 
 

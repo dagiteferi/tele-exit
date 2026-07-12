@@ -54,8 +54,11 @@ function ProgressPage() {
   }
 
   const topics = Object.values(q.data.topicScores).sort((a, b) => a.accuracy - b.accuracy);
-  const overall = topics.reduce((s, t) => s + t.accuracy, 0) / topics.length;
-  const overallTrend = trendFor("overall", overall);
+  const overall =
+    topics.length === 0
+      ? 0
+      : topics.reduce((s, t) => s + t.accuracy, 0) / topics.length;
+  const overallTrend = trendFor("overall", overall || 0.5);
 
   return (
     <div className="space-y-12">
@@ -85,34 +88,40 @@ function ProgressPage() {
 
       <section>
         <h2 className="font-display text-xl text-primary">Topic breakdown</h2>
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase tracking-wider text-muted-foreground">
-              <tr className="hairline-b">
-                <th className="py-2 pr-4 font-normal">Topic</th>
-                <th className="py-2 pr-4 font-normal">Trend</th>
-                <th className="py-2 pr-4 font-normal">Correct / attempted</th>
-                <th className="py-2 pr-4 text-right font-normal">Accuracy</th>
-              </tr>
-            </thead>
-            <tbody>
-              {topics.map((t) => (
-                <tr key={t.topic} className="hairline-b">
-                  <td className="py-3 pr-4 text-primary">{t.topic}</td>
-                  <td className="py-3 pr-4">
-                    <Sparkline values={trendFor(t.topic, t.accuracy)} height={28} width={120} />
-                  </td>
-                  <td className="py-3 pr-4 tabular-nums text-muted-foreground">
-                    {t.correct} / {t.attempted}
-                  </td>
-                  <td className="py-3 pr-4 text-right tabular-nums text-primary">
-                    {Math.round(t.accuracy * 100)}%
-                  </td>
+        {topics.length === 0 ? (
+          <p className="mt-4 text-sm text-muted-foreground">
+            No topic scores yet — complete a practice or exam to see your breakdown.
+          </p>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-xs uppercase tracking-wider text-muted-foreground">
+                <tr className="hairline-b">
+                  <th className="py-2 pr-4 font-normal">Topic</th>
+                  <th className="py-2 pr-4 font-normal">Trend</th>
+                  <th className="py-2 pr-4 font-normal">Correct / attempted</th>
+                  <th className="py-2 pr-4 text-right font-normal">Accuracy</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {topics.map((t) => (
+                  <tr key={t.topic} className="hairline-b">
+                    <td className="py-3 pr-4 text-primary">{t.topic}</td>
+                    <td className="py-3 pr-4">
+                      <Sparkline values={trendFor(t.topic, t.accuracy)} height={28} width={120} />
+                    </td>
+                    <td className="py-3 pr-4 tabular-nums text-muted-foreground">
+                      {t.correct} / {t.attempted}
+                    </td>
+                    <td className="py-3 pr-4 text-right tabular-nums text-primary">
+                      {Math.round(t.accuracy * 100)}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </div>
   );

@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AdminShell } from "@/components/AdminShell";
+import { ExamTopicPanel } from "@/components/ExamTopicPanel";
 
 const FIELDS = [
   "Software Engineering",
@@ -247,7 +248,6 @@ function ExamLibrary({ exams, loading }: { exams: ExamSummary[]; loading: boolea
   const [query, setQuery] = useState("");
   const [fieldFilter, setFieldFilter] = useState<string>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [topicFilter, setTopicFilter] = useState<string | null>(null);
 
   const detail = useQuery({
     queryKey: ["admin", "exam", selectedId],
@@ -272,22 +272,6 @@ function ExamLibrary({ exams, loading }: { exams: ExamSummary[]; loading: boolea
       );
     });
   }, [exams, query, fieldFilter]);
-
-  const topics = useMemo(() => {
-    const qs = detail.data?.questions ?? [];
-    const map = new Map<string, number>();
-    for (const q of qs) {
-      const t = q.topic?.trim() || "Untitled";
-      map.set(t, (map.get(t) || 0) + 1);
-    }
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [detail.data]);
-
-  const visibleQuestions = useMemo(() => {
-    const qs = detail.data?.questions ?? [];
-    if (!topicFilter) return qs;
-    return qs.filter((q) => (q.topic?.trim() || "Untitled") === topicFilter);
-  }, [detail.data, topicFilter]);
 
   if (loading) return <p className="text-sm text-muted-foreground">Loading exams…</p>;
   if (exams.length === 0) {
@@ -318,28 +302,25 @@ function ExamLibrary({ exams, loading }: { exams: ExamSummary[]; loading: boolea
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Showing {filtered.length} of {exams.length} exams — click one to open details and questions.
+        Showing {filtered.length} of {exams.length} exams — click one to open details.
       </p>
 
-      <div className="grid max-h-72 gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid max-h-64 gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
         {filtered.map((exam) => {
           const active = selectedId === exam.id;
           return (
             <button
               key={exam.id}
               type="button"
-              onClick={() => {
-                setSelectedId(active ? null : exam.id);
-                setTopicFilter(null);
-              }}
+              onClick={() => setSelectedId(active ? null : exam.id)}
               className={
-                "rounded-md border px-3 py-3 text-left transition-colors " +
+                "rounded-xl border px-3 py-3 text-left transition-colors " +
                 (active
                   ? "border-primary bg-secondary"
                   : "border-hairline hover:border-primary/40 hover:bg-secondary/40")
               }
             >
-              <p className="text-xs uppercase tracking-wider text-muted-foreground">
+              <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
                 {exam.fieldOfStudy}
                 {exam.year ? ` · ${exam.year}` : ""}
               </p>
@@ -353,106 +334,40 @@ function ExamLibrary({ exams, loading }: { exams: ExamSummary[]; loading: boolea
       </div>
 
       {selectedId && (
-        <div className="rounded-md border border-hairline">
-          <div className="flex flex-wrap items-start justify-between gap-2 border-b border-hairline px-4 py-3">
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p className="text-sm font-medium text-primary">
-                {detail.data?.exam.title ?? "Loading exam…"}
+              <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                {detail.data?.exam.fieldOfStudy}
+                {detail.data?.exam.year ? ` · ${detail.data.exam.year}` : ""}
               </p>
-              <p className="text-xs text-muted-foreground">
-                {detail.data
-                  ? `${detail.data.exam.fieldOfStudy} · ${detail.data.questions.length} questions · ${topics.length} topics`
-                  : "Fetching questions…"}
+              <p className="mt-1 text-lg font-medium text-primary">
+                {detail.data?.exam.title ?? "Loading exam…"}
               </p>
             </div>
             <button
               type="button"
-              onClick={() => {
-                setSelectedId(null);
-                setTopicFilter(null);
-              }}
-              className="text-xs text-muted-foreground hover:text-primary"
+              onClick={() => setSelectedId(null)}
+              className="text-sm text-muted-foreground hover:text-primary"
             >
               Close
             </button>
           </div>
 
           {detail.isLoading && (
-            <p className="px-4 py-6 text-sm text-muted-foreground">Loading questions…</p>
+            <p className="text-sm text-muted-foreground">Loading questions…</p>
           )}
           {detail.isError && (
-            <p className="px-4 py-6 text-sm text-destructive">
+            <p className="text-sm text-destructive">
               {detail.error instanceof Error ? detail.error.message : "Failed to load exam"}
             </p>
           )}
-
           {detail.data && (
-            <div className="space-y-4 p-4">
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setTopicFilter(null)}
-                  className={
-                    "rounded-md border px-3 py-1.5 text-sm " +
-                    (topicFilter === null
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-input hover:bg-secondary")
-                  }
-                >
-                  All topics ({detail.data.questions.length})
-                </button>
-                {topics.map(([topic, count]) => (
-                  <button
-                    key={topic}
-                    type="button"
-                    onClick={() => setTopicFilter(topic)}
-                    className={
-                      "rounded-md border px-3 py-1.5 text-sm " +
-                      (topicFilter === topic
-                        ? "border-primary bg-secondary font-medium text-primary"
-                        : "border-input hover:bg-secondary/60")
-                    }
-                  >
-                    {topic} ({count})
-                  </button>
-                ))}
-              </div>
-
-              <ExamQuestionList questions={visibleQuestions} />
-            </div>
+            <ExamTopicPanel questions={detail.data.questions} showAnswers />
           )}
         </div>
       )}
     </div>
-  );
-}
-
-function ExamQuestionList({ questions }: { questions: ExamQuestion[] }) {
-  if (questions.length === 0) {
-    return <p className="text-sm text-muted-foreground">No questions in this filter.</p>;
-  }
-  return (
-    <ul className="max-h-96 divide-y divide-hairline overflow-y-auto rounded-md border border-hairline">
-      {questions.map((q, i) => (
-        <li key={q.id} className="px-4 py-3 text-sm">
-          <p className="text-xs text-muted-foreground">
-            #{i + 1} · {q.topic}
-            {q.year ? ` · ${q.year}` : ""}
-          </p>
-          <p className="mt-1 text-foreground">{q.questionText}</p>
-          {q.choices && q.choices.length > 0 && (
-            <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground">
-              {q.choices.map((c) => (
-                <li key={c}>{c}</li>
-              ))}
-            </ul>
-          )}
-          {q.referenceAnswer && (
-            <p className="mt-2 text-xs text-[var(--sage)]">Answer: {q.referenceAnswer}</p>
-          )}
-        </li>
-      ))}
-    </ul>
   );
 }
 
@@ -463,7 +378,6 @@ function TopicBrowser({
   questions: QuestionRow[];
   loading: boolean;
 }) {
-  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [selectedField, setSelectedField] = useState<string | null>(null);
 
   const fields = useMemo(() => {
@@ -475,28 +389,21 @@ function TopicBrowser({
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [questions]);
 
-  const topics = useMemo(() => {
+  const mapped = useMemo(() => {
     const filtered = selectedField
       ? questions.filter((q) => (q.fieldOfStudy?.trim() || "Unassigned") === selectedField)
       : questions;
-    const map = new Map<string, number>();
-    for (const q of filtered) {
-      const key = q.topic?.trim() || "Untitled topic";
-      map.set(key, (map.get(key) || 0) + 1);
-    }
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    return filtered.map(
+      (q): ExamQuestion => ({
+        id: q.id,
+        topic: q.topic,
+        year: q.year,
+        questionText: q.question,
+        choices: q.choices,
+        fieldOfStudy: q.fieldOfStudy,
+      }),
+    );
   }, [questions, selectedField]);
-
-  const visibleQuestions = useMemo(() => {
-    if (!selectedTopic) return [];
-    return questions.filter((q) => {
-      const topic = q.topic?.trim() || "Untitled topic";
-      const field = q.fieldOfStudy?.trim() || "Unassigned";
-      if (topic !== selectedTopic) return false;
-      if (selectedField && field !== selectedField) return false;
-      return true;
-    });
-  }, [questions, selectedTopic, selectedField]);
 
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading questions…</p>;
@@ -504,116 +411,44 @@ function TopicBrowser({
 
   if (questions.length === 0) {
     return (
-      <p className="py-6 text-center text-sm text-muted-foreground">
-        No questions uploaded yet.
-      </p>
+      <p className="py-6 text-center text-sm text-muted-foreground">No questions uploaded yet.</p>
     );
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {fields.length > 1 && (
-        <div>
-          <p className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">
-            Department / field
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedField(null);
-                setSelectedTopic(null);
-              }}
-              className={
-                "rounded-md border px-3 py-1.5 text-sm transition-colors " +
-                (selectedField === null
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-input text-primary hover:bg-secondary")
-              }
-            >
-              All ({questions.length})
-            </button>
-            {fields.map(([field, count]) => (
-              <button
-                key={field}
-                type="button"
-                onClick={() => {
-                  setSelectedField(field);
-                  setSelectedTopic(null);
-                }}
-                className={
-                  "rounded-md border px-3 py-1.5 text-sm transition-colors " +
-                  (selectedField === field
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-input text-primary hover:bg-secondary")
-                }
-              >
-                {field} ({count})
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div>
-        <p className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">Topics</p>
         <div className="flex flex-wrap gap-2">
-          {topics.map(([topic, count]) => (
+          <button
+            type="button"
+            onClick={() => setSelectedField(null)}
+            className={
+              "rounded-md border px-3 py-1.5 text-sm " +
+              (selectedField === null
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-input hover:bg-secondary")
+            }
+          >
+            All fields ({questions.length})
+          </button>
+          {fields.map(([field, count]) => (
             <button
-              key={topic}
+              key={field}
               type="button"
-              onClick={() => setSelectedTopic((t) => (t === topic ? null : topic))}
+              onClick={() => setSelectedField(field)}
               className={
-                "rounded-md border px-3 py-1.5 text-sm transition-colors " +
-                (selectedTopic === topic
-                  ? "border-primary bg-secondary text-primary font-medium"
-                  : "border-input text-foreground hover:border-primary/50 hover:bg-secondary/60")
+                "rounded-md border px-3 py-1.5 text-sm " +
+                (selectedField === field
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-input hover:bg-secondary")
               }
             >
-              {topic}
-              <span className="ml-1.5 tabular-nums text-muted-foreground">({count})</span>
+              {field} ({count})
             </button>
           ))}
         </div>
-      </div>
-
-      {selectedTopic ? (
-        <div className="rounded-md border border-hairline">
-          <div className="flex items-center justify-between border-b border-hairline px-4 py-2">
-            <p className="text-sm font-medium text-primary">{selectedTopic}</p>
-            <button
-              type="button"
-              onClick={() => setSelectedTopic(null)}
-              className="text-xs text-muted-foreground hover:text-primary"
-            >
-              Close
-            </button>
-          </div>
-          <ul className="divide-y divide-hairline">
-            {visibleQuestions.map((q, i) => (
-              <li key={q.id} className="px-4 py-3 text-sm">
-                <p className="text-xs text-muted-foreground">
-                  #{i + 1}
-                  {q.year ? ` · ${q.year}` : ""}
-                  {q.fieldOfStudy ? ` · ${q.fieldOfStudy}` : ""}
-                </p>
-                <p className="mt-1 text-foreground">{q.question}</p>
-                {q.choices && q.choices.length > 0 && (
-                  <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground">
-                    {q.choices.map((c) => (
-                      <li key={c}>{c}</li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          Select a topic to view its questions.
-        </p>
       )}
+      <ExamTopicPanel questions={mapped} />
     </div>
   );
 }
