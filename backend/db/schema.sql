@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS exam_questions (
     year INTEGER NOT NULL,
     question_text TEXT NOT NULL,
     reference_answer TEXT NOT NULL,
+    explanation TEXT,
     choices_json TEXT,
     source TEXT NOT NULL DEFAULT 'user_uploaded',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

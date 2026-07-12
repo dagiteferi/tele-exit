@@ -37,6 +37,7 @@ class LocalVectorStoreAdapter(VectorStorePort):
                 "question_text": question.question_text,
                 "reference_answer": getattr(question, "reference_answer", ""),
                 "choices": getattr(question, "choices", None),
+                "explanation": getattr(question, "explanation", None),
                 "source": getattr(question, "source", "user_uploaded"),
             }
         elif isinstance(question, dict):
@@ -49,6 +50,7 @@ class LocalVectorStoreAdapter(VectorStorePort):
                 "question_text": question["question_text"],
                 "reference_answer": question.get("reference_answer", ""),
                 "choices": question.get("choices"),
+                "explanation": question.get("explanation"),
                 "source": question.get("source", "user_uploaded"),
             }
         else:
@@ -63,8 +65,8 @@ class LocalVectorStoreAdapter(VectorStorePort):
                 """
                 INSERT INTO exam_questions (
                     id, exam_id, field_of_study, topic, year,
-                    question_text, reference_answer, choices_json, source
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    question_text, reference_answer, explanation, choices_json, source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     exam_id = excluded.exam_id,
                     field_of_study = excluded.field_of_study,
@@ -72,6 +74,7 @@ class LocalVectorStoreAdapter(VectorStorePort):
                     year = excluded.year,
                     question_text = excluded.question_text,
                     reference_answer = excluded.reference_answer,
+                    explanation = excluded.explanation,
                     choices_json = excluded.choices_json,
                     source = excluded.source
                 """,
@@ -83,6 +86,7 @@ class LocalVectorStoreAdapter(VectorStorePort):
                     record["year"],
                     record["question_text"],
                     record["reference_answer"],
+                    record.get("explanation"),
                     choices_json,
                     record["source"],
                 ),
@@ -118,6 +122,7 @@ class LocalVectorStoreAdapter(VectorStorePort):
                         q.year,
                         q.question_text,
                         q.reference_answer,
+                        q.explanation,
                         q.choices_json,
                         e.embedding
                     FROM exam_questions q
@@ -138,6 +143,7 @@ class LocalVectorStoreAdapter(VectorStorePort):
                         q.year,
                         q.question_text,
                         q.reference_answer,
+                        q.explanation,
                         q.choices_json,
                         e.embedding
                     FROM exam_questions q
@@ -162,6 +168,7 @@ class LocalVectorStoreAdapter(VectorStorePort):
                         "year": row["year"],
                         "question_text": row["question_text"],
                         "reference_answer": row["reference_answer"],
+                        "explanation": row["explanation"],
                         "choices": json.loads(choices_raw) if choices_raw else None,
                     },
                 )

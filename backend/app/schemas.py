@@ -178,6 +178,7 @@ class ExamQuestionOut(BaseModel):
     question_text: str
     choices: Optional[list[str]] = None
     reference_answer: Optional[str] = None
+    explanation: Optional[str] = None
     field_of_study: Optional[str] = None
 
 

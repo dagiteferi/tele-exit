@@ -39,3 +39,5 @@ def _migrate_exam_question_columns(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE exam_questions ADD COLUMN field_of_study TEXT")
     if "choices_json" not in cols:
         connection.execute("ALTER TABLE exam_questions ADD COLUMN choices_json TEXT")
+    if "explanation" not in cols:
+        connection.execute("ALTER TABLE exam_questions ADD COLUMN explanation TEXT")

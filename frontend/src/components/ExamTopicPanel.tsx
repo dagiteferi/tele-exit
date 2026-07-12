@@ -3,7 +3,7 @@ import type { ExamQuestion } from "@/lib/api";
 
 /**
  * Clean two-pane exam browser: topic list + questions.
- * Replaces crowded topic pill walls when there are dozens of topics.
+ * Answers stay hidden until the student clicks Show answer.
  */
 export function ExamTopicPanel({
   questions,
@@ -16,6 +16,7 @@ export function ExamTopicPanel({
 }) {
   const [topicQuery, setTopicQuery] = useState("");
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
+  const [openAnswers, setOpenAnswers] = useState<Record<string, boolean>>({});
 
   const topics = useMemo(() => {
     const map = new Map<string, number>();
@@ -124,43 +125,62 @@ export function ExamTopicPanel({
           </div>
 
           <ul className="max-h-64 divide-y divide-hairline overflow-y-auto md:max-h-[28rem]">
-            {visibleQuestions.map((q, i) => (
-              <li key={q.id} className="px-4 py-4">
-                <div className="flex items-baseline gap-2">
-                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  {!selectedTopic && (
-                    <span className="rounded bg-secondary px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                      {q.topic}
+            {visibleQuestions.map((q, i) => {
+              const answerOpen = !!openAnswers[q.id];
+              return (
+                <li key={q.id} className="px-4 py-4">
+                  <div className="flex items-baseline gap-2">
+                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                      {String(i + 1).padStart(2, "0")}
                     </span>
-                  )}
-                </div>
-                <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-                  {q.questionText}
-                </p>
-                {q.choices && q.choices.length > 0 && (
-                  <ul className="mt-3 space-y-1.5">
-                    {q.choices.map((c) => (
-                      <li
-                        key={c}
-                        className="rounded-md border border-hairline/80 bg-[color:var(--surface)] px-3 py-1.5 text-sm text-muted-foreground"
-                      >
-                        {c}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {showAnswers && q.referenceAnswer && (
-                  <p className="mt-3 text-sm text-[var(--sage)]">
-                    <span className="text-xs uppercase tracking-wider text-muted-foreground">
-                      Answer{" "}
-                    </span>
-                    {q.referenceAnswer}
+                    {!selectedTopic && (
+                      <span className="rounded bg-secondary px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                        {q.topic}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                    {q.questionText}
                   </p>
-                )}
-              </li>
-            ))}
+                  {q.choices && q.choices.length > 0 && (
+                    <ul className="mt-3 space-y-1.5">
+                      {q.choices.map((c) => (
+                        <li
+                          key={c}
+                          className="rounded-md border border-hairline/80 bg-[color:var(--surface)] px-3 py-1.5 text-sm text-muted-foreground"
+                        >
+                          {c}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {showAnswers && q.referenceAnswer && (
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpenAnswers((prev) => ({
+                            ...prev,
+                            [q.id]: !prev[q.id],
+                          }))
+                        }
+                        className="text-sm font-medium text-primary underline underline-offset-4"
+                      >
+                        {answerOpen ? "Hide answer" : "Show answer"}
+                      </button>
+                      {answerOpen && (
+                        <div className="mt-2 rounded-md bg-secondary/60 px-3 py-2 text-sm text-primary">
+                          <p className="font-medium">{q.referenceAnswer}</p>
+                          {q.explanation && (
+                            <p className="mt-2 text-foreground whitespace-pre-wrap">{q.explanation}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
       </div>

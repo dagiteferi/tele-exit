@@ -38,6 +38,7 @@ def _question_out(q: dict, *, include_answer: bool) -> ExamQuestionOut:
         question_text=q["question_text"],
         choices=q.get("choices"),
         reference_answer=q.get("reference_answer") if include_answer else None,
+        explanation=q.get("explanation") if include_answer else None,
         field_of_study=q.get("field_of_study"),
     )
 
@@ -258,6 +259,7 @@ async def practice_chat(
         f"Field topic: {question['topic']}\n"
         f"Question: {question['question_text']}\n"
         f"Reference answer (for your guidance only): {question['reference_answer']}\n"
+        f"Explanation (for your guidance only): {question.get('explanation') or 'n/a'}\n"
         f"Student message: {body.message}\n"
     )
     reply = await container.llm.generate(prompt, system=system)

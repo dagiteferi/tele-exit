@@ -34,7 +34,7 @@ type AttemptResult = {
 };
 
 function attemptStorageKey(examId: string, mode: string) {
-  return `tele-exit-session:${examId}:${mode}`;
+  return `tele-exit-session:v3:${examId}:${mode}`;
 }
 
 type SavedSession = {
@@ -69,7 +69,18 @@ function clearSession(examId: string, mode: string) {
   sessionStorage.removeItem(attemptStorageKey(examId, mode));
 }
 
-export const Route = createFileRoute("/exams/$examId")({
+function sessionLooksValid(saved: SavedSession): boolean {
+  if (!saved.attemptId || !saved.questions?.length) return false;
+  // Reject stale sessions that lost MCQ choices (would force a textarea).
+  const sample = saved.questions.slice(0, 8);
+  const shouldHaveChoices = sample.some((q) =>
+    /which of the following|choose|select|correct/i.test(q.questionText || ""),
+  );
+  if (shouldHaveChoices && sample.every((q) => !q.choices?.length)) return false;
+  return true;
+}
+
+export const Route = createFileRoute("/exams_/$examId")({
   validateSearch: searchSchema,
   head: () => ({
     meta: [{ title: "Exam session — Tele-Exit" }, { name: "robots", content: "noindex" }],
@@ -94,8 +105,8 @@ function ExamSessionPage() {
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
-  const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [chatByQuestion, setChatByQuestion] = useState<Record<string, ChatTurn[]>>({});
+  const [chatOpen, setChatOpen] = useState<Record<string, boolean>>({});
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const [callBusy, setCallBusy] = useState(false);
@@ -112,8 +123,8 @@ function ExamSessionPage() {
       setIndex(0);
       setAnswers({});
       setRevealed({});
-      setChecked({});
       setChatByQuestion({});
+      setChatOpen({});
       setResult(null);
       setError(null);
       setBooting(false);
@@ -126,17 +137,17 @@ function ExamSessionPage() {
 
   useEffect(() => {
     const saved = loadSavedSession(examId, mode);
-    if (saved?.attemptId && saved.questions?.length) {
+    if (saved && sessionLooksValid(saved)) {
       setAttemptId(saved.attemptId);
       setQuestions(saved.questions);
-      setIndex(saved.index || 0);
+      setIndex(Math.min(saved.index || 0, saved.questions.length - 1));
       setAnswers(saved.answers || {});
       setRevealed(saved.revealed || {});
-      setChecked(saved.checked || {});
       setChatByQuestion(saved.chatByQuestion || {});
       setBooting(false);
       return;
     }
+    clearSession(examId, mode);
     start.mutate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [examId, mode]);
@@ -149,24 +160,15 @@ function ExamSessionPage() {
       index,
       answers,
       revealed,
-      checked,
+      checked: revealed,
       chatByQuestion,
     });
-  }, [
-    examId,
-    mode,
-    attemptId,
-    questions,
-    index,
-    answers,
-    revealed,
-    checked,
-    chatByQuestion,
-    result,
-  ]);
+  }, [examId, mode, attemptId, questions, index, answers, revealed, chatByQuestion, result]);
 
   const current = questions[index];
+  const choices = useMemo(() => normalizeChoices(current), [current]);
   const chatLog = current ? chatByQuestion[current.id] || [] : [];
+  const isChatOpen = current ? !!chatOpen[current.id] : false;
   const answeredCount = useMemo(
     () => questions.filter((q) => (answers[q.id] || "").trim().length > 0).length,
     [questions, answers],
@@ -179,6 +181,13 @@ function ExamSessionPage() {
   function goTo(i: number) {
     setIndex(i);
     setChatInput("");
+  }
+
+  function selectAnswer(value: string) {
+    if (!current) return;
+    const qid = current.id;
+    setAnswers((prev) => ({ ...prev, [qid]: value }));
+    // Do not auto-reveal the bank answer — student opens it with Show answer.
   }
 
   async function sendChat() {
@@ -288,17 +297,15 @@ function ExamSessionPage() {
     );
   }
 
-  const isRevealed = !!revealed[current.id];
-  const isChecked = !!checked[current.id];
   const yourAnswer = answers[current.id] || "";
-  const match =
+  const isRevealed = isPractice && !!revealed[current.id];
+  const isCorrect =
     yourAnswer.trim() && current.referenceAnswer
       ? answersRoughlyMatch(current.referenceAnswer, yourAnswer)
       : null;
 
   return (
     <div className="space-y-5">
-      {/* Header */}
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs uppercase tracking-wider text-muted-foreground">
@@ -306,25 +313,12 @@ function ExamSessionPage() {
           </p>
           <h1 className="mt-1 truncate font-display text-2xl text-primary">{current.topic}</h1>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {isPractice && (
-            <button
-              type="button"
-              disabled={callBusy}
-              onClick={() => void onStudyCall()}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
-            >
-              <CallIcon />
-              {callBusy ? "Starting…" : "Start study call"}
-            </button>
-          )}
-          <Link
-            to="/exams"
-            className="rounded-lg border border-input px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-primary"
-          >
-            Exit
-          </Link>
-        </div>
+        <Link
+          to="/exams"
+          className="rounded-lg border border-input px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-primary"
+        >
+          Exit
+        </Link>
       </header>
 
       {error && (
@@ -336,17 +330,15 @@ function ExamSessionPage() {
         </p>
       )}
 
-      {/* Progress */}
       <div className="h-1.5 overflow-hidden rounded-full bg-[color:var(--hairline)]">
         <div
           className="h-full rounded-full bg-[var(--amber)] transition-[width] duration-300"
-          style={{ width: `${((index + 1) / questions.length) * 100}%` }}
+          style={{ width: `${((index + 1) / Math.max(questions.length, 1)) * 100}%` }}
           aria-hidden
         />
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[200px_minmax(0,1fr)_minmax(280px,320px)]">
-        {/* Question navigator */}
+      <div className="grid gap-5 lg:grid-cols-[200px_minmax(0,1fr)]">
         <aside className="rounded-xl border border-hairline bg-background p-3 lg:sticky lg:top-24 lg:self-start">
           <p className="px-2 pb-2 text-xs uppercase tracking-wider text-muted-foreground">
             Questions
@@ -387,116 +379,218 @@ function ExamSessionPage() {
           </ol>
         </aside>
 
-        {/* Main question */}
-        <section className="rounded-xl border border-hairline bg-background p-5 md:p-7">
-          <p className="text-xs text-muted-foreground">
-            Question {index + 1} of {questions.length}
-          </p>
-          <p className="mt-3 text-lg leading-relaxed text-foreground md:text-xl md:leading-relaxed">
-            {current.questionText}
-          </p>
+        <section className="space-y-4">
+          <div className="rounded-xl border border-hairline bg-background p-5 md:p-7">
+            <p className="text-xs text-muted-foreground">
+              Question {index + 1} of {questions.length}
+            </p>
+            <p className="mt-3 text-lg leading-relaxed text-foreground md:text-xl">
+              {current.questionText}
+            </p>
 
-          {current.choices && current.choices.length > 0 ? (
-            <div className="mt-6 space-y-2.5" role="radiogroup" aria-label="Answer choices">
-              {current.choices.map((choice) => {
-                const selected = answers[current.id] === choice;
-                const isCorrectChoice =
-                  isPractice &&
-                  isRevealed &&
-                  current.referenceAnswer &&
-                  answersRoughlyMatch(current.referenceAnswer, choice);
-                return (
-                  <label
-                    key={choice}
+            {choices.length > 0 ? (
+              <div className="mt-6 space-y-2.5" role="listbox" aria-label="Answer choices">
+                {choices.map((choice) => {
+                  const selected = yourAnswer === choice;
+                  const correctOpt =
+                    isRevealed &&
+                    !!current.referenceAnswer &&
+                    answersRoughlyMatch(current.referenceAnswer, choice);
+                  const wrongPick = isRevealed && selected && !correctOpt;
+                  return (
+                    <button
+                      key={choice}
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
+                      onClick={() => selectAnswer(choice)}
+                      className={
+                        "flex w-full items-start gap-3 rounded-lg border px-4 py-3.5 text-left text-sm leading-relaxed transition-colors " +
+                        (correctOpt
+                          ? "border-[color:var(--sage)] bg-[color:var(--sage)]/15 text-primary"
+                          : wrongPick
+                            ? "border-[color:var(--rust)] bg-[color:var(--rust)]/10 text-primary"
+                            : selected
+                              ? "border-primary bg-secondary text-primary"
+                              : "border-hairline text-foreground hover:border-primary/40 hover:bg-secondary/60")
+                      }
+                    >
+                      <span
+                        className={
+                          "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] " +
+                          (selected
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-hairline")
+                        }
+                        aria-hidden
+                      >
+                        {selected ? "✓" : ""}
+                      </span>
+                      <span>{choice}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <textarea
+                value={yourAnswer}
+                onChange={(e) => selectAnswer(e.target.value)}
+                rows={5}
+                placeholder="Write your answer…"
+                className="mt-6 w-full rounded-lg border border-input bg-background px-4 py-3 text-sm leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            )}
+
+            {isPractice && (
+              <div className="mt-6 flex flex-wrap gap-2 border-t border-hairline pt-5">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setRevealed((prev) => ({
+                      ...prev,
+                      [current.id]: !prev[current.id],
+                    }))
+                  }
+                  className="rounded-lg border border-input px-4 py-2.5 text-sm font-medium text-primary hover:bg-secondary"
+                >
+                  {isRevealed ? "Hide answer" : "Show answer"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setChatOpen((prev) => ({
+                      ...prev,
+                      [current.id]: !prev[current.id],
+                    }))
+                  }
+                  className={
+                    "rounded-lg px-4 py-2.5 text-sm font-medium transition-colors " +
+                    (isChatOpen
+                      ? "bg-secondary text-primary"
+                      : "border border-input text-primary hover:bg-secondary")
+                  }
+                >
+                  {isChatOpen ? "Hide AI chat" : "Ask AI about this"}
+                </button>
+                <button
+                  type="button"
+                  disabled={callBusy}
+                  onClick={() => void onStudyCall()}
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                >
+                  <CallIcon />
+                  {callBusy ? "Starting…" : "Start study call"}
+                </button>
+              </div>
+            )}
+
+            {isPractice && isRevealed && current.referenceAnswer && (
+              <div
+                className={
+                  "mt-4 rounded-lg border px-4 py-4 " +
+                  (isCorrect
+                    ? "border-[color:var(--sage)]/50 bg-[color:var(--sage)]/10"
+                    : "border-hairline bg-secondary/50")
+                }
+              >
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                  Answer from exam bank
+                </p>
+                <p className="mt-2 text-base font-medium text-primary whitespace-pre-wrap">
+                  {current.referenceAnswer}
+                </p>
+                {current.explanation ? (
+                  <div className="mt-3 border-t border-hairline pt-3">
+                    <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                      Explanation
+                    </p>
+                    <p className="mt-1.5 text-sm leading-relaxed text-foreground whitespace-pre-wrap">
+                      {current.explanation}
+                    </p>
+                  </div>
+                ) : null}
+                {yourAnswer && (
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    Your choice: <span className="text-foreground">{yourAnswer}</span>
+                    {isCorrect === true ? " · correct" : isCorrect === false ? " · not matching" : ""}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {!isPractice && (
+              <p className="mt-6 text-xs text-muted-foreground">
+                Exam mode — answers stay hidden until you submit.
+              </p>
+            )}
+          </div>
+
+          {isPractice && isChatOpen && (
+            <div className="flex min-h-[320px] flex-col rounded-xl border border-hairline bg-background">
+              <div className="border-b border-hairline px-4 py-3">
+                <h2 className="font-display text-lg text-primary">Ask AI</h2>
+                <p className="text-xs text-muted-foreground">
+                  Chat about this question only — hints, why options are wrong, or a step-by-step.
+                </p>
+              </div>
+              <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4 text-sm">
+                {chatLog.length === 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {["Give me a hint", "Explain why C is correct", "Why is my answer wrong?"].map(
+                      (prompt) => (
+                        <button
+                          key={prompt}
+                          type="button"
+                          onClick={() => setChatInput(prompt)}
+                          className="rounded-full border border-hairline px-3 py-1 text-xs text-primary hover:bg-secondary"
+                        >
+                          {prompt}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                )}
+                {chatLog.map((t, i) => (
+                  <div
+                    key={`${current.id}-chat-${i}`}
                     className={
-                      "flex cursor-pointer items-start gap-3 rounded-lg border px-4 py-3 text-sm transition-colors " +
-                      (isCorrectChoice
-                        ? "border-[color:var(--sage)] bg-[color:var(--sage)]/10"
-                        : selected
-                          ? "border-primary bg-secondary/80"
-                          : "border-hairline hover:bg-secondary/50")
+                      "max-w-[92%] rounded-lg px-3 py-2 leading-relaxed " +
+                      (t.who === "you"
+                        ? "ml-auto bg-primary text-primary-foreground"
+                        : "bg-secondary text-foreground")
                     }
                   >
-                    <input
-                      type="radio"
-                      name={`q-${current.id}`}
-                      checked={selected}
-                      onChange={() => {
-                        setAnswers({ ...answers, [current.id]: choice });
-                        setChecked((prev) => ({ ...prev, [current.id]: false }));
-                      }}
-                      className="mt-0.5"
-                    />
-                    <span className="leading-relaxed">{choice}</span>
-                  </label>
-                );
-              })}
-            </div>
-          ) : (
-            <textarea
-              value={answers[current.id] || ""}
-              onChange={(e) => {
-                setAnswers({ ...answers, [current.id]: e.target.value });
-                setChecked((prev) => ({ ...prev, [current.id]: false }));
-              }}
-              rows={5}
-              placeholder="Write your answer…"
-              className="mt-6 w-full rounded-lg border border-input bg-background px-4 py-3 text-sm leading-relaxed outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          )}
-
-          {isPractice && (
-            <div className="mt-6 flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={!yourAnswer.trim()}
-                onClick={() => setChecked((prev) => ({ ...prev, [current.id]: true }))}
-                className="rounded-lg border border-input px-3.5 py-2 text-sm text-primary transition-colors hover:bg-secondary disabled:opacity-40"
-              >
-                Check my answer
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setRevealed((prev) => ({ ...prev, [current.id]: !prev[current.id] }))
-                }
-                className="rounded-lg border border-input px-3.5 py-2 text-sm text-primary transition-colors hover:bg-secondary"
-              >
-                {isRevealed ? "Hide solution" : "Show solution"}
-              </button>
+                    {t.text}
+                  </div>
+                ))}
+                <div ref={chatEndRef} />
+              </div>
+              <div className="flex gap-2 border-t border-hairline p-3">
+                <input
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void sendChat();
+                    }
+                  }}
+                  placeholder="Ask anything about this question…"
+                  className="flex-1 rounded-lg border border-input px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <button
+                  type="button"
+                  disabled={chatBusy || !chatInput.trim()}
+                  onClick={() => void sendChat()}
+                  className="rounded-lg bg-primary px-3.5 py-2 text-sm text-primary-foreground disabled:opacity-50"
+                >
+                  Send
+                </button>
+              </div>
             </div>
           )}
 
-          {isPractice && isChecked && (
-            <div
-              className={
-                "mt-4 rounded-lg px-4 py-3 text-sm " +
-                (match
-                  ? "bg-[color:var(--sage)]/15 text-primary"
-                  : "bg-[color:var(--rust)]/10 text-primary")
-              }
-            >
-              {match === null
-                ? "Select or write an answer first."
-                : match
-                  ? "Looks correct — nice work."
-                  : "Not quite. Reveal the solution or ask the coach for a hint."}
-            </div>
-          )}
-
-          {isPractice && isRevealed && (
-            <div className="mt-4 rounded-lg border border-hairline bg-secondary/40 px-4 py-4">
-              <p className="text-xs uppercase tracking-wider text-muted-foreground">Solution</p>
-              <p className="mt-2 text-sm leading-relaxed text-foreground whitespace-pre-wrap">
-                {current.referenceAnswer || "No solution stored for this question."}
-              </p>
-              <p className="mt-3 text-xs text-muted-foreground">
-                From your exam bank — use chat if you want it explained step by step.
-              </p>
-            </div>
-          )}
-
-          <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-hairline pt-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <button
               type="button"
               disabled={index === 0}
@@ -524,88 +618,6 @@ function ExamSessionPage() {
             )}
           </div>
         </section>
-
-        {/* Practice coach chat */}
-        {isPractice ? (
-          <aside className="flex min-h-[420px] flex-col rounded-xl border border-hairline bg-background lg:sticky lg:top-24 lg:max-h-[calc(100dvh-8rem)]">
-            <div className="border-b border-hairline px-4 py-3">
-              <h2 className="font-display text-lg text-primary">Study coach</h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Chat about this question — hints, steps, or why an option is wrong.
-              </p>
-            </div>
-            <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4 text-sm">
-              {chatLog.length === 0 && (
-                <div className="space-y-2 text-muted-foreground">
-                  <p>Try asking:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      "Give me a hint",
-                      "Explain the solution",
-                      "Why is my answer wrong?",
-                    ].map((prompt) => (
-                      <button
-                        key={prompt}
-                        type="button"
-                        onClick={() => setChatInput(prompt)}
-                        className="rounded-full border border-hairline px-3 py-1 text-xs text-primary transition-colors hover:bg-secondary"
-                      >
-                        {prompt}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {chatLog.map((t, i) => (
-                <div
-                  key={`${current.id}-${i}`}
-                  className={
-                    "max-w-[95%] rounded-lg px-3 py-2 leading-relaxed " +
-                    (t.who === "you"
-                      ? "ml-auto bg-primary text-primary-foreground"
-                      : "bg-secondary text-foreground")
-                  }
-                >
-                  {t.text}
-                </div>
-              ))}
-              <div ref={chatEndRef} />
-            </div>
-            <div className="border-t border-hairline p-3">
-              <div className="flex gap-2">
-                <input
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      void sendChat();
-                    }
-                  }}
-                  placeholder="Ask anything about this question…"
-                  className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                />
-                <button
-                  type="button"
-                  disabled={chatBusy || !chatInput.trim()}
-                  onClick={() => void sendChat()}
-                  className="rounded-lg bg-primary px-3.5 py-2 text-sm text-primary-foreground disabled:opacity-50"
-                >
-                  Send
-                </button>
-              </div>
-            </div>
-          </aside>
-        ) : (
-          <aside className="rounded-xl border border-hairline bg-background p-5 text-sm text-muted-foreground lg:col-start-2">
-            <h2 className="font-medium text-primary">Exam rules</h2>
-            <ul className="mt-2 list-disc space-y-1 pl-5">
-              <li>Answers stay hidden until you submit.</li>
-              <li>AI chat and study call are off.</li>
-              <li>Your score updates your progress.</li>
-            </ul>
-          </aside>
-        )}
       </div>
     </div>
   );
@@ -703,6 +715,20 @@ function answersRoughlyMatch(reference: string, given: string): boolean {
   const letter = b.match(/^([a-d])\b/);
   if (letter && a.startsWith(letter[1])) return true;
   return false;
+}
+
+/** Prefer API choices; fall back to A–D lines embedded in the question text. */
+function normalizeChoices(q: ExamQuestion | undefined): string[] {
+  if (!q) return [];
+  if (q.choices && q.choices.length > 0) {
+    return q.choices.map((c) => String(c).trim()).filter(Boolean);
+  }
+  const text = q.questionText || "";
+  const matches = text.match(/(?:^|\n)\s*([A-D][).:]\s+.+)/gi);
+  if (matches && matches.length >= 2) {
+    return matches.map((m) => m.trim());
+  }
+  return [];
 }
 
 function CallIcon() {

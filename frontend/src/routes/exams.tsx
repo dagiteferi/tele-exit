@@ -109,11 +109,10 @@ function ExamsPage() {
               <h2 className="mt-1 font-display text-2xl text-primary">
                 {detail.data?.exam.title ?? selectedExam?.title ?? "Exam details"}
               </h2>
-              {detail.data && (
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {detail.data.questions.length} questions across topics — pick a topic on the left
-                </p>
-              )}
+              <p className="mt-1 text-sm text-muted-foreground">
+                Preview only below. Open practice to select answers, see solutions, chat, or start a
+                call.
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Link
