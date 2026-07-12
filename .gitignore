@@ -63,6 +63,9 @@ tele_exit.db
 .DS_Store
 Thumbs.db
 
+# Node / frontend
+node_modules/
+
 # Project tooling
 .qodo/
 
