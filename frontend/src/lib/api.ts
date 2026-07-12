@@ -658,11 +658,26 @@ export async function practiceChat(
   questionId: string,
   message: string,
 ): Promise<string> {
-  const data = await apiFetch<{ reply: string }>(`/exams/attempts/${attemptId}/chat`, {
-    method: "POST",
-    body: JSON.stringify({ question_id: questionId, message }),
-  });
-  return data.reply;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 35_000);
+  try {
+    const data = await apiFetch<{ reply: string }>(`/exams/attempts/${attemptId}/chat`, {
+      method: "POST",
+      body: JSON.stringify({ question_id: questionId, message }),
+      signal: controller.signal,
+    });
+    return data.reply;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new ApiError(408, "Study coach timed out — try a shorter question.");
+    }
+    if (err instanceof TypeError) {
+      throw new ApiError(0, "Couldn't reach the study coach — check that the backend is running.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function startStudyCall(
