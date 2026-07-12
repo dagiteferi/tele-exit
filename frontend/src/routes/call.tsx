@@ -88,6 +88,13 @@ function CallScreen() {
   const [coachBusy, setCoachBusy] = useState(false);
   const [sharePhase, setSharePhase] = useState<SharePhase>("joining");
   const [liveCaption, setLiveCaption] = useState("");
+  const [sharedVideo, setSharedVideo] = useState<{
+    title: string;
+    url: string;
+    timestamp?: string;
+    description?: string;
+  } | null>(null);
+  const [findingVideo, setFindingVideo] = useState(false);
   const [question] = useState<QuestionCard>(() =>
     handoff?.question
       ? {
@@ -120,10 +127,11 @@ function CallScreen() {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const transcriptEndRef = useRef<HTMLLIElement | null>(null);
+  const chatScrollRef = useRef<HTMLOListElement | null>(null);
   const cancelSpeakRef = useRef<(() => void) | null>(null);
   const listenRef = useRef<ReturnType<typeof createSpeechListener> | null>(null);
   const pendingSpeechRef = useRef("");
+  const followUpRef = useRef("");
   const silenceTimerRef = useRef<number | null>(null);
   const replyLockRef = useRef(false);
 
@@ -134,7 +142,12 @@ function CallScreen() {
   const askCoach = useCallback(
     async (spoken: string) => {
       const msg = spoken.trim();
-      if (!msg || replyLockRef.current) return;
+      if (!msg) return;
+      if (replyLockRef.current) {
+        // Don't drop the student mid-sentence — queue one follow-up.
+        followUpRef.current = msg;
+        return;
+      }
       if (!attemptId || !questionId) {
         pushTurn("agent", "I lost the exam link — go back and start the study call again.");
         return;
@@ -145,12 +158,33 @@ function CallScreen() {
       setLiveCaption("");
       pushTurn("you", msg);
 
+      const wantsVideo = /youtube|video|videos|watch|clip|tutorial/i.test(msg);
+      if (wantsVideo) setFindingVideo(true);
+
+      // Watchdog: never leave the UI stuck in "thinking".
+      const watchdog = window.setTimeout(() => {
+        if (!replyLockRef.current) return;
+        setCoachBusy(false);
+        setFindingVideo(false);
+        replyLockRef.current = false;
+        pushTurn(
+          "agent",
+          "Nice try — I'm still with you. Say that again or tell me your next thought.",
+        );
+      }, 12_000);
+
       try {
-        const reply = await practiceChat(attemptId, questionId, msg, {
+        const res = await practiceChat(attemptId, questionId, msg, {
           mode: "voice",
-          timeoutMs: 18_000,
+          timeoutMs: 10_000,
         });
-        const clean = (reply || "Got it — tell me more about what you see on the shared screen.").trim();
+        const clean = (
+          res.reply || "Got it — tell me more about what you see on the shared screen."
+        ).trim();
+        if (res.video?.url) {
+          setSharedVideo(res.video);
+          setSharePhase("shared");
+        }
         pushTurn("agent", clean);
         cancelSpeakRef.current?.();
         setSpeaking(true);
@@ -160,15 +194,26 @@ function CallScreen() {
         });
       } catch (err) {
         const fallback =
-          err instanceof Error ? err.message : "I missed that — say it one more time.";
+          err instanceof Error && /timed out|timeout/i.test(err.message)
+            ? "Nice try — that took a second. What’s your next thought on the shared question?"
+            : err instanceof Error
+              ? err.message
+              : "I missed that — say it one more time.";
         pushTurn("agent", fallback);
         setSpeaking(true);
         cancelSpeakRef.current = speakNow(forSpeech(fallback), {
           onEnd: () => setSpeaking(false),
         });
       } finally {
+        window.clearTimeout(watchdog);
+        setFindingVideo(false);
         setCoachBusy(false);
         replyLockRef.current = false;
+        const queued = followUpRef.current.trim();
+        followUpRef.current = "";
+        if (queued && queued !== msg) {
+          window.setTimeout(() => void askCoach(queued), 250);
+        }
       }
     },
     [attemptId, questionId, pushTurn],
@@ -185,7 +230,7 @@ function CallScreen() {
         pendingSpeechRef.current = "";
         setLiveCaption("");
         if (full) void askCoach(full);
-      }, 900);
+      }, 700);
     },
     [askCoach],
   );
@@ -259,6 +304,13 @@ function CallScreen() {
       timers.push(setTimeout(runQuestion, questionDelay));
     }
 
+    // Hard guarantee: never leave the UI stuck on "Connecting…".
+    timers.push(
+      setTimeout(() => {
+        setSharePhase((phase) => (phase === "shared" ? phase : "shared"));
+      }, Math.max(6500, questionDelay + 800)),
+    );
+
     const poll = window.setInterval(() => {
       if (!window.speechSynthesis) return;
       setSpeaking(window.speechSynthesis.speaking || window.speechSynthesis.pending);
@@ -308,9 +360,12 @@ function CallScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Scroll only the chat panel — never the shared-screen window / page.
   useEffect(() => {
-    transcriptEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [transcript.length, liveCaption]);
+    const el = chatScrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [transcript.length, liveCaption, coachBusy]);
 
   function startListening() {
     if (!speechRecognitionSupported()) {
@@ -392,8 +447,8 @@ function CallScreen() {
     (coachBusy ? "Coach is thinking…" : listening ? "Listening… start talking" : "");
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background text-foreground">
-      <header className="hairline-b flex items-center justify-between gap-4 bg-background/95 px-4 py-3 backdrop-blur md:px-6">
+    <div className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-background text-foreground">
+      <header className="hairline-b z-20 flex shrink-0 items-center justify-between gap-4 bg-background/95 px-4 py-3 backdrop-blur md:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <ReadinessRing value={readiness} size={40} stroke={5} compact caption="" />
           <div className="min-w-0">
@@ -422,66 +477,70 @@ function CallScreen() {
         </button>
       </header>
 
-      {/* Meet-style presenting banner */}
       {sharePhase !== "joining" && (
-        <div className="meet-presenting-bar border-b border-hairline bg-secondary/70 px-4 py-2">
+        <div className="meet-presenting-bar z-20 shrink-0 border-b border-hairline bg-secondary/70 px-4 py-2">
           <div className="mx-auto flex max-w-5xl items-center justify-center gap-2 text-xs text-foreground md:text-sm">
             <ScreenShareIcon />
             <span className="font-medium text-primary">
               {sharePhase === "sharing"
                 ? "AI Coach is presenting their screen…"
-                : "AI Coach is presenting · Exam question"}
+                : sharedVideo
+                  ? `AI Coach is presenting · Q${question.index} + YouTube`
+                  : `AI Coach is presenting · Question ${question.index}`}
             </span>
           </div>
         </div>
       )}
 
-      <div className="relative flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_300px]">
-        <section className="relative flex min-h-0 flex-1 flex-col p-3 md:p-5">
+      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(160px,28vh)] overflow-hidden lg:grid-cols-[minmax(0,1fr)_320px] lg:grid-rows-1">
+        <section className="relative flex min-h-0 flex-col overflow-hidden p-3 md:p-4">
           <div
             className={
-              "relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-hairline bg-card shadow-[var(--shadow-quiet)] " +
+              "relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-hairline bg-[#1a1d24] shadow-[var(--shadow-quiet)] " +
               (sharePhase === "shared" ? "meet-share-in" : "")
             }
           >
-            <div className="flex items-center justify-between gap-3 border-b border-hairline bg-secondary/40 px-3 py-2 md:px-4">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 bg-[#232833] px-3 py-2 md:px-4">
               <div className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]/90" aria-hidden />
-                <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]/90" aria-hidden />
-                <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]/90" aria-hidden />
+                <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" aria-hidden />
+                <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" aria-hidden />
+                <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" aria-hidden />
+                <span className="ml-1 hidden rounded bg-white/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-white/80 sm:inline">
+                  Screen share
+                </span>
               </div>
-              <p className="truncate text-xs text-muted-foreground">
+              <p className="truncate text-xs text-white/65">
                 {sharePhase === "joining"
-                  ? "tele-exit · connecting"
+                  ? "Connecting…"
                   : sharePhase === "sharing"
-                    ? "tele-exit · starting presentation"
-                    : `tele-exit · ${examTitle}`}
+                    ? "Starting presentation…"
+                    : `${examTitle} · Q${question.index}`}
               </p>
-              <span className="hidden text-[10px] uppercase tracking-wider text-muted-foreground sm:inline">
-                {sharePhase === "shared" ? "You are viewing" : "…"}
+              <span className="rounded-full bg-[var(--amber)]/20 px-2.5 py-0.5 text-[11px] font-semibold text-[var(--amber-strong)]">
+                Q{question.index}/{question.total}
               </span>
             </div>
 
-            <div className="relative min-h-0 flex-1 overflow-y-auto bg-background">
+            <div className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[linear-gradient(165deg,#f7f4ee_0%,#f3efe6_50%,#ebe4d8_100%)]">
               {sharePhase === "joining" && (
-                <div className="flex h-full min-h-[300px] flex-col items-center justify-center gap-4 px-6 text-center">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--amber)]/15 font-display text-2xl text-[var(--amber-strong)]">
+                <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-4 px-6 text-center">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--amber)]/20 font-display text-2xl text-[var(--amber-strong)]">
                     AI
                   </div>
-                  <p className="font-display text-xl text-primary">Connecting…</p>
-                  <p className="text-sm text-muted-foreground">Your coach will present the exam next.</p>
+                  <p className="font-display text-xl text-[#1c2430]">Connecting…</p>
+                  <p className="text-sm text-[#5b6573]">Your coach will present the exam next.</p>
                 </div>
               )}
 
               {sharePhase === "sharing" && (
-                <div className="flex h-full min-h-[300px] flex-col items-center justify-center px-6">
-                  <div className="meet-share-in w-full max-w-md rounded-2xl border border-dashed border-hairline bg-secondary/50 px-8 py-12 text-center">
+                <div className="flex h-full min-h-[220px] flex-col items-center justify-center px-6">
+                  <div className="meet-share-in w-full max-w-md rounded-2xl border border-black/10 bg-white/70 px-8 py-12 text-center shadow-sm">
                     <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
                       <ScreenShareIcon className="h-6 w-6" />
                     </div>
-                    <p className="font-display text-lg text-primary">Presenting screen</p>
-                    <p className="mt-1 text-sm text-muted-foreground">Exam paper is opening…</p>
-                    <div className="mx-auto mt-6 h-1.5 w-40 overflow-hidden rounded-full bg-hairline">
+                    <p className="font-display text-lg text-[#1c2430]">Presenting screen</p>
+                    <p className="mt-1 text-sm text-[#5b6573]">Opening question {question.index}…</p>
+                    <div className="mx-auto mt-6 h-1.5 w-40 overflow-hidden rounded-full bg-black/10">
                       <div className="h-full w-2/3 animate-pulse rounded-full bg-[var(--amber)]" />
                     </div>
                   </div>
@@ -489,32 +548,89 @@ function CallScreen() {
               )}
 
               {sharePhase === "shared" && (
-                <div className="meet-share-in mx-auto max-w-3xl px-5 py-6 md:px-10 md:py-8">
-                  <div className="mb-5 flex flex-wrap items-center justify-between gap-2 border-b border-hairline pb-3">
-                    <div>
-                      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--amber-strong)]">
-                        Shared presentation
-                      </p>
-                      <p className="mt-1 font-display text-lg text-primary md:text-xl">{examTitle}</p>
+                <div className="mx-auto max-w-3xl px-5 py-5 md:px-8 md:py-7">
+                  <div className="mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-black/10 pb-3">
+                    <div className="flex items-end gap-3">
+                      <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-xl bg-[#1c2430] text-white shadow-sm">
+                        <span className="text-[9px] uppercase tracking-wider text-white/60">Q</span>
+                        <span className="font-display text-2xl leading-none">{question.index}</span>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#8a6a2f]">
+                          Shared exam paper
+                        </p>
+                        <p className="mt-0.5 font-display text-lg text-[#1c2430] md:text-xl">{examTitle}</p>
+                        {question.topic ? (
+                          <p className="mt-0.5 text-xs text-[#5b6573]">{question.topic}</p>
+                        ) : null}
+                      </div>
                     </div>
-                    <div className="rounded-md border border-hairline bg-secondary/40 px-3 py-1.5 text-right text-xs text-muted-foreground">
-                      <p>
+                    <div className="rounded-md border border-black/10 bg-white/80 px-3 py-1.5 text-right text-xs text-[#4a5564]">
+                      <p className="font-semibold text-[#1c2430]">
                         Question {question.index} of {question.total}
                       </p>
-                      {question.topic ? <p className="mt-0.5 max-w-[14rem] truncate">{question.topic}</p> : null}
+                      <p className="mt-0.5 text-[10px] uppercase tracking-wider">Live share</p>
                     </div>
                   </div>
-                  <p className="font-display text-xl leading-relaxed text-primary md:text-2xl md:leading-[1.4]">
+
+                  {findingVideo && (
+                    <div className="mb-5 rounded-xl border border-dashed border-black/15 bg-white/60 px-4 py-5 text-center">
+                      <p className="font-display text-base text-[#1c2430]">Finding a YouTube video…</p>
+                      <p className="mt-1 text-xs text-[#5b6573]">For question {question.index}</p>
+                    </div>
+                  )}
+
+                  {sharedVideo?.url && (
+                    <div className="mb-5 overflow-hidden rounded-xl border border-black/10 bg-white shadow-sm">
+                      <div className="flex items-center justify-between gap-2 border-b border-black/10 bg-[#f7f4ee] px-3 py-2">
+                        <p className="truncate text-xs font-medium text-[#1c2430]">
+                          {sharedVideo.title || "YouTube"}
+                        </p>
+                        <a
+                          href={sharedVideo.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="shrink-0 text-[11px] text-[var(--amber-strong)] underline-offset-2 hover:underline"
+                        >
+                          Open
+                        </a>
+                      </div>
+                      {youtubeEmbedId(sharedVideo.url) ? (
+                        <div className="aspect-video w-full bg-black">
+                          <iframe
+                            title={sharedVideo.title || "YouTube video"}
+                            src={`https://www.youtube.com/embed/${youtubeEmbedId(sharedVideo.url)}?rel=0`}
+                            className="h-full w-full"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          />
+                        </div>
+                      ) : (
+                        <div className="px-4 py-6 text-center text-sm">
+                          <a
+                            href={sharedVideo.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[var(--amber-strong)] underline-offset-2 hover:underline"
+                          >
+                            Open on YouTube
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <p className="font-display text-xl leading-relaxed text-[#1a2230] md:text-2xl md:leading-[1.4]">
                     {question.text}
                   </p>
                   {question.choices.length > 0 && (
-                    <ul className="mt-6 space-y-2.5">
+                    <ul className="mt-5 space-y-2.5">
                       {question.choices.map((choice, i) => (
                         <li
                           key={`${i}-${choice}`}
-                          className="flex gap-3 rounded-lg border border-hairline bg-secondary/30 px-4 py-3 text-sm leading-relaxed"
+                          className="flex gap-3 rounded-lg border border-black/10 bg-white/80 px-4 py-3 text-sm leading-relaxed text-[#243041]"
                         >
-                          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary">
+                          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#1c2430]/10 text-xs font-semibold text-[#1c2430]">
                             {String.fromCharCode(65 + i)}
                           </span>
                           <span>{stripChoiceLetter(choice)}</span>
@@ -527,46 +643,44 @@ function CallScreen() {
             </div>
           </div>
 
-          {/* Participant tiles */}
-          <div className="pointer-events-none absolute bottom-[7.5rem] right-5 z-10 flex flex-col gap-2 md:bottom-36 md:right-8">
+          <div className="pointer-events-none absolute bottom-4 right-4 z-10 flex flex-col gap-2 md:bottom-5 md:right-5">
             <div
               className={
-                "overflow-hidden rounded-xl border border-hairline bg-card shadow-[var(--shadow-quiet)] " +
-                (speaking || coachBusy ? "ring-2 ring-[var(--amber)]/45" : "")
+                "overflow-hidden rounded-xl border border-white/20 bg-[#232833] shadow-lg " +
+                (speaking || coachBusy ? "ring-2 ring-[var(--amber)]/55" : "")
               }
             >
-              <div className="flex h-24 w-36 flex-col items-center justify-center md:h-28 md:w-40">
-                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--amber)]/20 font-display text-lg text-[var(--amber-strong)]">
+              <div className="flex h-20 w-28 flex-col items-center justify-center md:h-24 md:w-36">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--amber)]/25 font-display text-base text-[var(--amber-strong)]">
                   AI
                 </div>
-                <p className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground">Coach</p>
+                <p className="mt-1 text-[10px] uppercase tracking-wider text-white/55">Coach</p>
               </div>
               {(speaking || coachBusy) && (
-                <p className="border-t border-hairline bg-secondary/50 px-2 py-1 text-center text-[10px] text-[var(--amber-strong)]">
-                  {coachBusy ? "Thinking" : "Speaking"}
+                <p className="border-t border-white/10 bg-black/30 px-2 py-1 text-center text-[10px] text-[var(--amber-strong)]">
+                  {coachBusy ? (findingVideo ? "Finding video" : "Thinking") : "Speaking"}
                 </p>
               )}
             </div>
-            <div className="relative h-24 w-36 overflow-hidden rounded-xl border border-hairline bg-secondary shadow-[var(--shadow-quiet)] md:h-28 md:w-40">
+            <div className="relative h-20 w-28 overflow-hidden rounded-xl border border-white/20 bg-black shadow-lg md:h-24 md:w-36">
               <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
               {!cameraOn && (
-                <div className="absolute inset-0 flex items-center justify-center text-[10px] uppercase tracking-wider text-muted-foreground">
+                <div className="absolute inset-0 flex items-center justify-center text-[10px] uppercase tracking-wider text-white/55">
                   You
                 </div>
               )}
               {listening && (
-                <span className="absolute bottom-1.5 left-1.5 rounded bg-[var(--amber-strong)] px-1.5 py-0.5 text-[10px] text-white">
+                <span className="absolute bottom-1 left-1 rounded bg-[var(--amber-strong)] px-1.5 py-0.5 text-[10px] text-white">
                   Mic on
                 </span>
               )}
             </div>
           </div>
 
-          {/* Live captions — like Meet captions */}
           {(captionText || listening) && (
-            <div className="meet-caption-in pointer-events-none absolute inset-x-4 bottom-20 z-20 flex justify-center md:bottom-24">
+            <div className="meet-caption-in pointer-events-none absolute inset-x-4 bottom-4 z-20 flex justify-center lg:bottom-5">
               <p
-                className="max-w-2xl rounded-lg bg-primary/90 px-4 py-2.5 text-center text-sm leading-relaxed text-primary-foreground shadow-lg"
+                className="max-w-xl rounded-lg bg-[#1c2430]/92 px-4 py-2 text-center text-sm leading-relaxed text-white shadow-lg"
                 aria-live="polite"
               >
                 {captionText || "Listening…"}
@@ -575,9 +689,13 @@ function CallScreen() {
           )}
         </section>
 
-        <aside className="flex max-h-[32dvh] flex-col border-t border-hairline lg:max-h-none lg:border-l lg:border-t-0">
-          <p className="eyebrow border-b border-hairline px-4 py-3">Call chat</p>
-          <ol className="flex-1 space-y-3 overflow-y-auto px-4 py-3 text-sm" aria-live="polite">
+        <aside className="flex min-h-0 flex-col overflow-hidden border-t border-hairline bg-background lg:border-l lg:border-t-0">
+          <p className="eyebrow shrink-0 border-b border-hairline px-4 py-3">Call chat</p>
+          <ol
+            ref={chatScrollRef}
+            className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-3 text-sm"
+            aria-live="polite"
+          >
             {transcript.map((turn) => (
               <li key={turn.id} className="flex gap-2.5">
                 <span
@@ -590,7 +708,9 @@ function CallScreen() {
                 >
                   {turn.who === "agent" ? "AI" : "You"}
                 </span>
-                <span className={turn.who === "agent" ? "text-primary" : "text-foreground"}>{turn.text}</span>
+                <span className={turn.who === "agent" ? "text-primary" : "text-foreground"}>
+                  {turn.text}
+                </span>
               </li>
             ))}
             {liveCaption && listening && (
@@ -601,14 +721,13 @@ function CallScreen() {
                 <span className="italic text-muted-foreground">{liveCaption}</span>
               </li>
             )}
-            <li ref={transcriptEndRef} aria-hidden />
           </ol>
         </aside>
       </div>
 
-      <footer className="border-t border-hairline bg-background px-4 py-4 md:px-6">
+      <footer className="z-20 shrink-0 border-t border-hairline bg-background px-4 py-3 md:px-6">
         {connectionError && (
-          <p role="alert" className="mx-auto mb-3 max-w-lg text-center text-sm text-destructive">
+          <p role="alert" className="mx-auto mb-2 max-w-lg text-center text-sm text-destructive">
             {connectionError}
           </p>
         )}
@@ -619,7 +738,7 @@ function CallScreen() {
             aria-pressed={listening}
             aria-label={listening ? "Mute" : "Unmute"}
             className={
-              "flex h-14 w-14 items-center justify-center rounded-full text-white shadow-[var(--shadow-quiet)] transition-transform " +
+              "flex h-12 w-12 items-center justify-center rounded-full text-white shadow-[var(--shadow-quiet)] transition-transform md:h-14 md:w-14 " +
               (listening
                 ? "bg-[var(--amber-strong)] hover:brightness-105"
                 : "bg-primary hover:bg-primary/90")
@@ -629,9 +748,15 @@ function CallScreen() {
           </button>
           <div className="min-w-0 text-left text-xs text-muted-foreground">
             <p className="font-medium text-foreground">
-              {listening ? "Unmuted — talk now" : speaking ? "Coach speaking" : coachBusy ? "Coach thinking" : "Muted"}
+              {listening
+                ? "Unmuted — talk now"
+                : speaking
+                  ? "Coach speaking"
+                  : coachBusy
+                    ? "Coach thinking"
+                    : "Muted"}
             </p>
-            <p className="truncate">Your words appear as captions · coach answers out loud</p>
+            <p className="truncate">Chat scrolls on the side · shared screen stays put</p>
           </div>
         </div>
       </footer>
@@ -641,6 +766,13 @@ function CallScreen() {
 
 function stripChoiceLetter(choice: string): string {
   return choice.replace(/^[A-Da-d][.)]\s*/, "").trim() || choice;
+}
+
+function youtubeEmbedId(url: string): string | null {
+  const m = url.match(
+    /(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/,
+  );
+  return m?.[1] ?? null;
 }
 
 function ScreenShareIcon({ className }: { className?: string }) {

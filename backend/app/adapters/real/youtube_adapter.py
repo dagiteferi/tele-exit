@@ -29,7 +29,6 @@ class YouTubeAdapter(VideoSearchPort):
                 data = response.json()
         except Exception:
             # Keep the call usable if YouTube API is down / quota exhausted.
-            slug = "".join(ch if ch.isalnum() else "-" for ch in topic.lower())[:40]
             return {
                 "title": f"{topic} — search on YouTube",
                 "url": f"https://www.youtube.com/results?search_query={topic.replace(' ', '+')}",

@@ -114,6 +114,6 @@ export function speakNow(
 
 /** Estimated UI cue times for the opening script (ms from speak start). */
 export const CALL_OPENING_CUES = {
-  sharingMs: 4200,
-  questionMs: 7800,
+  sharingMs: 2800,
+  questionMs: 5200,
 } as const;
