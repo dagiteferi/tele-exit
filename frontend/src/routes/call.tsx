@@ -14,6 +14,8 @@ import {
 import {
   createSpeechListener,
   forSpeech,
+  getCallMediaStream,
+  cleanSpeechTranscript,
   speechRecognitionSupported,
 } from "@/lib/speechListen";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -479,15 +481,18 @@ function CallScreen() {
   );
 
   const queueUserSpeech = useCallback((chunk: string) => {
-    pendingSpeechRef.current = `${pendingSpeechRef.current} ${chunk}`.trim();
+    const cleaned = cleanSpeechTranscript(chunk);
+    if (!cleaned) return;
+    pendingSpeechRef.current = `${pendingSpeechRef.current} ${cleaned}`.trim();
     setLiveCaption(pendingSpeechRef.current);
     if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
+    // Wait for a natural pause so we send the full phrase, not noise fragments.
     silenceTimerRef.current = window.setTimeout(() => {
-      const full = pendingSpeechRef.current.trim();
+      const full = cleanSpeechTranscript(pendingSpeechRef.current);
       pendingSpeechRef.current = "";
       setLiveCaption("");
       if (full) void askCoachRef.current(full);
-    }, 700);
+    }, 1100);
   }, []);
 
   askCoachRef.current = askCoach;
@@ -599,7 +604,7 @@ function CallScreen() {
     let cancelled = false;
     (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const stream = await getCallMediaStream();
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;
@@ -664,9 +669,9 @@ function CallScreen() {
         let sum = 0;
         for (let i = 0; i < data.length; i += 1) sum += data[i];
         const avg = sum / data.length;
-        if (avg > 26) loudFrames += 1;
+        if (avg > 38) loudFrames += 1;
         else loudFrames = Math.max(0, loudFrames - 2);
-        setTalkingWhileMuted(loudFrames >= 6);
+        setTalkingWhileMuted(loudFrames >= 8);
         raf = requestAnimationFrame(tick);
       };
       raf = requestAnimationFrame(tick);
@@ -720,8 +725,13 @@ function CallScreen() {
     listenRef.current?.stop();
     listenRef.current = createSpeechListener({
       onInterim: (text) => {
+        const cleaned = cleanSpeechTranscript(text);
+        if (!cleaned) {
+          setLiveCaption(pendingSpeechRef.current);
+          return;
+        }
         const pending = pendingSpeechRef.current;
-        setLiveCaption(pending ? `${pending} ${text}`.trim() : text);
+        setLiveCaption(pending ? `${pending} ${cleaned}`.trim() : cleaned);
       },
       onFinal: (text) => queueUserSpeechRef.current(text),
       onError: (message) => setConnectionError(message),
@@ -738,12 +748,21 @@ function CallScreen() {
       window.clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = null;
     }
-    const leftover = pendingSpeechRef.current.trim() || liveCaption.trim();
+    const leftover = cleanSpeechTranscript(
+      pendingSpeechRef.current || liveCaption,
+    );
     pendingSpeechRef.current = "";
     setLiveCaption("");
     setListening(false);
     if (leftover) void askCoachRef.current(leftover);
   }
+
+  // While the coach speaks, pause STT so captions hear *you*, not the TTS echo.
+  useEffect(() => {
+    if (!listening || !listenRef.current) return;
+    if (speaking) listenRef.current.pause();
+    else listenRef.current.resume();
+  }, [speaking, listening]);
 
   async function toggleMic() {
     if (listening) {
@@ -752,12 +771,26 @@ function CallScreen() {
     }
     if (!cameraOn) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const stream = await getCallMediaStream();
         streamRef.current = stream;
         if (videoRef.current) videoRef.current.srcObject = stream;
         setCameraOn(true);
       } catch {
         setConnectionError("Couldn't access your camera or microphone — check browser permissions.");
+      }
+    } else if (streamRef.current) {
+      // Re-apply noise constraints on an existing track when possible.
+      const audio = streamRef.current.getAudioTracks()[0];
+      if (audio) {
+        try {
+          await audio.applyConstraints({
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          });
+        } catch {
+          // browser may ignore
+        }
       }
     }
     startListening();
@@ -806,7 +839,13 @@ function CallScreen() {
   const readiness = profile.data?.readiness ?? 0;
   const captionText =
     liveCaption ||
-    (coachBusy ? "Coach is thinking…" : listening ? "Listening… start talking" : "");
+    (coachBusy
+      ? "Coach is thinking…"
+      : speaking
+        ? "Coach speaking — captions pause to avoid echo"
+        : listening
+          ? "Listening for your words…"
+          : "");
 
   return (
     <div className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-background text-foreground">
