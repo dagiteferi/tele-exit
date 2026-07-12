@@ -163,6 +163,8 @@ function CallScreen() {
   const replyLockRef = useRef(false);
   const askCoachRef = useRef<(spoken: string) => Promise<void>>(async () => undefined);
   const queueUserSpeechRef = useRef<(chunk: string) => void>(() => undefined);
+  /** Student just got the current question right — “yes / move on” advances. */
+  const lastCorrectRef = useRef(false);
 
   const pushTurn = useCallback((who: "agent" | "you", text: string, forQuestionId?: string) => {
     const key = forQuestionId || questionIdRef.current || "q0";
@@ -183,6 +185,7 @@ function CallScreen() {
       const qid = q.id || `idx-${nextCursor}`;
       questionIdRef.current = qid;
       cursorRef.current = nextCursor;
+      lastCorrectRef.current = false;
       setCursor(nextCursor);
       setSharedVideo(null);
       setFindingVideo(false);
@@ -229,16 +232,25 @@ function CallScreen() {
     async (spoken: string) => {
       const msg = spoken.trim();
       if (!msg) return;
-      if (replyLockRef.current) {
-        followUpRef.current = msg;
-        return;
+
+      const currentQ = deck[cursorRef.current];
+      if (currentQ && messageLooksCorrect(msg, currentQ)) {
+        lastCorrectRef.current = true;
       }
 
       // Voice/chat navigation — agent actually changes the shared question.
-      const nav = detectQuestionNav(msg, cursorRef.current, deck.length);
+      // Allow next/prev even while a coach reply is in flight (common after “correct!”).
+      const nav =
+        detectQuestionNav(msg, cursorRef.current, deck.length) ||
+        (lastCorrectRef.current && wantsAdvanceAfterCorrect(msg)
+          ? ({ kind: "next" } as const)
+          : null);
       if (nav) {
         const fromId = questionIdRef.current;
         pushTurn("you", msg, fromId);
+        replyLockRef.current = false;
+        setCoachBusy(false);
+        followUpRef.current = "";
         if (nav.kind === "next" || nav.kind === "prev" || nav.kind === "goto") {
           const target =
             nav.kind === "next"
@@ -263,6 +275,11 @@ function CallScreen() {
           }
           return;
         }
+      }
+
+      if (replyLockRef.current) {
+        followUpRef.current = msg;
+        return;
       }
 
       const activeQuestionId = questionIdRef.current;
@@ -319,6 +336,9 @@ function CallScreen() {
         } else if (wantsVideo) {
           setFindingVideo(false);
         }
+        if (coachConfirmsCorrect(clean) || lastCorrectRef.current) {
+          lastCorrectRef.current = true;
+        }
         pushTurn("agent", clean, activeQuestionId);
         cancelSpeakRef.current?.();
         setSpeaking(true);
@@ -351,7 +371,7 @@ function CallScreen() {
         }
       }
     },
-    [attemptId, deck.length, pushTurn],
+    [attemptId, deck, pushTurn],
   );
 
   const queueUserSpeech = useCallback((chunk: string) => {
@@ -1074,16 +1094,88 @@ function detectQuestionNav(
   }
 
   if (
-    /\b(next question|go to the next|move to the next|skip (this|ahead)|following question|next one)\b/.test(
+    /\b(next questions?|go to the next|move to the next|move on to|skip (this|ahead)|following question|next one|another question)\b/.test(
       t,
     ) ||
-    /\b(can you |please )?(go |move |jump )?next\b/.test(t) ||
-    /^(next|next please|next one)$/.test(t)
+    /\b(can you |could you |please |let'?s |lets )?(go |move |jump |switch )?(to )?(the )?next\b/.test(
+      t,
+    ) ||
+    /^(next|next please|next one|move on)$/.test(t)
   ) {
     return { kind: "next" };
   }
 
   return null;
+}
+
+/** After a correct answer, short confirmations also mean “advance”. */
+function wantsAdvanceAfterCorrect(message: string): boolean {
+  const t = message.toLowerCase().replace(/[?.!,]/g, " ").replace(/\s+/g, " ").trim();
+  if (!t) return false;
+  if (
+    /^(yes|yeah|yep|yup|ok|okay|sure|please|go ahead|let'?s go|lets go|continue|move on|next)$/.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  return (
+    /\b(yes|yeah|ok|okay|sure).{0,24}\b(next|continue|move on|go ahead)\b/.test(t) ||
+    /\b(continue|move on|go ahead|keep going)\b/.test(t)
+  );
+}
+
+function answersRoughlyMatch(reference: string, given: string): boolean {
+  const norm = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  const a = norm(reference);
+  const b = norm(given);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.includes(b) || b.includes(a)) return true;
+  const letter = b.match(/^([a-d])\b/);
+  if (letter && a.startsWith(letter[1])) return true;
+  return false;
+}
+
+function messageLooksCorrect(message: string, q: QuestionCard): boolean {
+  const ref = (q.referenceAnswer || "").trim();
+  if (!ref) return false;
+  const t = message.trim();
+  if (answersRoughlyMatch(ref, t)) return true;
+
+  const letterHit = t.match(
+    /\b(?:(?:the\s+)?(?:answer|option|choice)\s*(?:is\s*)?|i\s*(?:think|pick|choose|go\s+with)\s*)([a-d])\b/i,
+  ) || t.match(/^\s*([a-d])\s*[.)]?\s*$/i);
+  if (letterHit) {
+    const letter = letterHit[1].toUpperCase();
+    if (ref.trim().toUpperCase().startsWith(letter)) return true;
+    for (const choice of q.choices || []) {
+      if (
+        choice.trim().toUpperCase().startsWith(letter) &&
+        answersRoughlyMatch(ref, choice)
+      ) {
+        return true;
+      }
+    }
+  }
+
+  for (const choice of q.choices || []) {
+    const body = stripChoiceLetter(choice);
+    if (body.length >= 3 && answersRoughlyMatch(ref, choice) && answersRoughlyMatch(body, t)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function coachConfirmsCorrect(reply: string): boolean {
+  return /\b(that'?s correct|you(?:'re| are) correct|that is correct|that'?s right|that is right|exactly|nailed it|you got it|spot on|well done|you(?:'re| are) right)\b/i.test(
+    reply,
+  );
 }
 
 function stripChoiceLetter(choice: string): string {

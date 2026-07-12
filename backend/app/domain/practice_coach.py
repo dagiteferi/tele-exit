@@ -30,6 +30,8 @@ _VOICE_SYSTEM = (
     "Reply in 1–2 short spoken sentences (max ~40 words). "
     "No markdown, no bullet lists, no LaTeX. "
     "Prefer a hint or next step unless they ask for the full answer. "
+    "If they are correct, say so clearly (e.g. 'That's correct!') and invite the next question. "
+    "If they ask to move on / next question, briefly agree — the app will change the slide. "
     "If they say they are ready, ask one focused question about the shared screen."
 )
 
