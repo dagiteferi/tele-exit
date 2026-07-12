@@ -345,13 +345,13 @@ function ExamSessionPage() {
       }
       const call = await startStudyCall(attemptId, current.id);
       const q = call.question;
-      const welcomeFinal = buildCallOpening(title, index + 1);
+      // Keep the exact spoken welcome so chat + voice stay in sync.
       sessionStorage.setItem(
         CALL_HANDOFF_KEY,
         JSON.stringify({
           examId,
           examTitle: title,
-          welcomeText: welcomeFinal,
+          welcomeText: welcome,
           speechStartedAt: startedAt,
           attemptId,
           roomName: call.roomName,

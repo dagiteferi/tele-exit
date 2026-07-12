@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getMyProfile, practiceChat } from "@/lib/api";
 import {
   buildCallOpening,
+  buildJoiningLine,
+  buildReadyLine,
+  buildShareLine,
   CALL_OPENING_CUES,
   speakNow,
   warmVoices,
@@ -120,7 +123,7 @@ function CallScreen() {
   );
 
   const [transcript, setTranscript] = useState<Turn[]>([
-    { id: "t1", who: "agent", text: "Welcome — joining your study call…" },
+    { id: "t1", who: "agent", text: buildJoiningLine() },
   ]);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
@@ -274,7 +277,7 @@ function CallScreen() {
         {
           id: "t-share",
           who: "agent",
-          text: "Let me share my screen so you can see the exam question…",
+          text: buildShareLine(question.index),
         },
       ]);
     };
@@ -285,7 +288,7 @@ function CallScreen() {
         {
           id: "t-q",
           who: "agent",
-          text: `Here's question ${question.index}. Unmute and talk — you’ll see your words on screen.`,
+          text: buildReadyLine(question.index),
         },
       ]);
     };
