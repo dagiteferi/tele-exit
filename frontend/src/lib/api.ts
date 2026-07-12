@@ -237,39 +237,384 @@ export interface QuestionRow {
   topic: string;
   year: number;
   question: string;
+  fieldOfStudy?: string | null;
+  examId?: string | null;
+  choices?: string[] | null;
 }
 
-const MOCK_QUESTIONS: QuestionRow[] = [
-  { id: "q1", topic: "Algorithms", year: 2022, question: "Given a directed acyclic graph, describe a topological sort algorithm and its time complexity." },
-  { id: "q2", topic: "Databases",  year: 2023, question: "Explain the difference between 3NF and BCNF with an example schema." },
-  { id: "q3", topic: "Networking", year: 2021, question: "Contrast TCP and UDP; give a scenario where UDP is preferable." },
-  { id: "q4", topic: "OS",         year: 2023, question: "Describe how a deadlock can arise and how the banker's algorithm prevents it." },
-];
-
-export async function listQuestions(): Promise<QuestionRow[]> {
-  await sleep(250);
-  return MOCK_QUESTIONS;
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string;
+  role: Role;
+  fieldOfStudy?: string | null;
+  examDate?: string | null;
+  createdAt?: string | null;
 }
+
+export interface ExamSummary {
+  id: string;
+  title: string;
+  fieldOfStudy: string;
+  year?: number | null;
+  description?: string | null;
+  questionCount: number;
+  createdAt?: string | null;
+}
+
+export interface ExamQuestion {
+  id: string;
+  topic: string;
+  year: number;
+  questionText: string;
+  choices?: string[] | null;
+  referenceAnswer?: string | null;
+  fieldOfStudy?: string | null;
+}
+
+export type ExamMode = "practice" | "exam";
 
 export interface IngestResult {
+  examId?: string;
+  title?: string;
+  fieldOfStudy?: string;
   ingested: number;
   skipped: number;
   errors: { row: number; message: string }[];
 }
 
-export async function uploadQuestions(file: File): Promise<IngestResult> {
-  await sleep(700);
-  // TODO backend: POST /admin/questions/upload
-  const size = file.size;
-  const approxRows = Math.max(1, Math.floor(size / 120));
-  const errors: { row: number; message: string }[] =
-    approxRows > 3
-      ? [
-          { row: 4, message: "Missing 'topic' column" },
-          { row: 11, message: "Year must be a 4-digit number" },
-        ]
-      : [];
-  const skipped = errors.length;
-  const ingested = Math.max(0, approxRows - skipped);
-  return { ingested, skipped, errors };
+function mapExam(e: {
+  id: string;
+  title: string;
+  field_of_study: string;
+  year?: number | null;
+  description?: string | null;
+  question_count?: number;
+  created_at?: string | null;
+}): ExamSummary {
+  return {
+    id: e.id,
+    title: e.title,
+    fieldOfStudy: e.field_of_study,
+    year: e.year,
+    description: e.description,
+    questionCount: e.question_count ?? 0,
+    createdAt: e.created_at,
+  };
+}
+
+function mapQuestion(q: {
+  id: string;
+  topic: string;
+  year: number;
+  question_text: string;
+  choices?: string[] | null;
+  reference_answer?: string | null;
+  field_of_study?: string | null;
+}): ExamQuestion {
+  return {
+    id: q.id,
+    topic: q.topic,
+    year: q.year,
+    questionText: q.question_text,
+    choices: q.choices,
+    referenceAnswer: q.reference_answer,
+    fieldOfStudy: q.field_of_study,
+  };
+}
+
+export async function listAdminUsers(): Promise<AdminUser[]> {
+  const rows = await apiFetch<
+    {
+      id: string;
+      email: string;
+      name: string;
+      role: Role;
+      field_of_study?: string | null;
+      exam_date?: string | null;
+      created_at?: string | null;
+    }[]
+  >("/admin/users");
+  return rows.map((u) => ({
+    id: u.id,
+    email: u.email,
+    name: u.name,
+    role: u.role,
+    fieldOfStudy: u.field_of_study,
+    examDate: u.exam_date,
+    createdAt: u.created_at,
+  }));
+}
+
+export async function inviteAdmin(input: {
+  email: string;
+  name: string;
+  password: string;
+}): Promise<AdminUser> {
+  const u = await apiFetch<{ id: string; email: string; name: string; role: Role }>(
+    "/admin/invite",
+    { method: "POST", body: JSON.stringify(input) },
+  );
+  return { id: u.id, email: u.email, name: u.name, role: u.role };
+}
+
+export async function listAdminExams(): Promise<ExamSummary[]> {
+  const rows = await apiFetch<
+    {
+      id: string;
+      title: string;
+      field_of_study: string;
+      year?: number | null;
+      description?: string | null;
+      question_count: number;
+      created_at?: string | null;
+    }[]
+  >("/admin/exams");
+  return rows.map(mapExam);
+}
+
+export async function listQuestions(): Promise<QuestionRow[]> {
+  const rows = await apiFetch<
+    {
+      id: string;
+      topic: string;
+      year: number;
+      question: string;
+      field_of_study?: string | null;
+      exam_id?: string | null;
+      choices?: string[] | null;
+    }[]
+  >("/admin/questions");
+  return rows.map((q) => ({
+    id: q.id,
+    topic: q.topic,
+    year: q.year,
+    question: q.question,
+    fieldOfStudy: q.field_of_study,
+    examId: q.exam_id,
+    choices: q.choices,
+  }));
+}
+
+export async function uploadExam(input: {
+  file: File;
+  title: string;
+  fieldOfStudy: string;
+  year?: number;
+}): Promise<IngestResult> {
+  const form = new FormData();
+  form.append("file", input.file);
+  form.append("title", input.title);
+  form.append("field_of_study", input.fieldOfStudy);
+  if (input.year != null) form.append("year", String(input.year));
+
+  const res = await fetch(`${API_BASE}/admin/exams/upload`, {
+    method: "POST",
+    headers: { ...authHeader(), Accept: "application/json" },
+    body: form,
+  });
+  if (!res.ok) throw new ApiError(res.status, await parseErrorMessage(res));
+  const data = (await res.json()) as {
+    exam_id: string;
+    title: string;
+    field_of_study: string;
+    ingested: number;
+    skipped: number;
+    errors: string[];
+  };
+  return {
+    examId: data.exam_id,
+    title: data.title,
+    fieldOfStudy: data.field_of_study,
+    ingested: data.ingested,
+    skipped: data.skipped,
+    errors: (data.errors || []).map((message, i) => ({ row: i + 1, message })),
+  };
+}
+
+/** @deprecated Prefer uploadExam with field_of_study */
+export async function uploadQuestions(
+  file: File,
+  meta?: { title?: string; fieldOfStudy?: string; year?: number },
+): Promise<IngestResult> {
+  return uploadExam({
+    file,
+    title: meta?.title || file.name.replace(/\.[^.]+$/, ""),
+    fieldOfStudy: meta?.fieldOfStudy || "General",
+    year: meta?.year,
+  });
+}
+
+// -- student exams -----------------------------------------------------------
+
+export async function listMyExams(): Promise<ExamSummary[]> {
+  const rows = await apiFetch<
+    {
+      id: string;
+      title: string;
+      field_of_study: string;
+      year?: number | null;
+      description?: string | null;
+      question_count: number;
+      created_at?: string | null;
+    }[]
+  >("/exams");
+  return rows.map(mapExam);
+}
+
+export async function getExam(
+  examId: string,
+  mode: ExamMode,
+): Promise<{ exam: ExamSummary; questions: ExamQuestion[]; mode: ExamMode }> {
+  const data = await apiFetch<{
+    exam: {
+      id: string;
+      title: string;
+      field_of_study: string;
+      year?: number | null;
+      description?: string | null;
+      question_count: number;
+      created_at?: string | null;
+    };
+    questions: {
+      id: string;
+      topic: string;
+      year: number;
+      question_text: string;
+      choices?: string[] | null;
+      reference_answer?: string | null;
+      field_of_study?: string | null;
+    }[];
+    mode: ExamMode;
+  }>(`/exams/${examId}?mode=${mode}`);
+  return {
+    exam: mapExam(data.exam),
+    questions: data.questions.map(mapQuestion),
+    mode: data.mode,
+  };
+}
+
+export async function startExamAttempt(
+  examId: string,
+  mode: ExamMode,
+): Promise<{ attemptId: string; examId: string; mode: ExamMode; questions: ExamQuestion[] }> {
+  const data = await apiFetch<{
+    attempt_id: string;
+    exam_id: string;
+    mode: ExamMode;
+    questions: {
+      id: string;
+      topic: string;
+      year: number;
+      question_text: string;
+      choices?: string[] | null;
+      reference_answer?: string | null;
+      field_of_study?: string | null;
+    }[];
+  }>(`/exams/${examId}/attempts`, {
+    method: "POST",
+    body: JSON.stringify({ mode }),
+  });
+  return {
+    attemptId: data.attempt_id,
+    examId: data.exam_id,
+    mode: data.mode,
+    questions: data.questions.map(mapQuestion),
+  };
+}
+
+export async function submitExamAttempt(
+  attemptId: string,
+  answers: { questionId: string; answer: string }[],
+): Promise<{
+  attemptId: string;
+  mode: ExamMode;
+  scoreCorrect: number;
+  scoreTotal: number;
+  percent: number;
+  results: {
+    questionId: string;
+    topic: string;
+    correct: boolean;
+    yourAnswer: string;
+    referenceAnswer: string;
+  }[];
+}> {
+  const data = await apiFetch<{
+    attempt_id: string;
+    mode: ExamMode;
+    score_correct: number;
+    score_total: number;
+    percent: number;
+    results: {
+      question_id: string;
+      topic: string;
+      correct: boolean;
+      your_answer: string;
+      reference_answer: string;
+    }[];
+  }>(`/exams/attempts/${attemptId}/submit`, {
+    method: "POST",
+    body: JSON.stringify({
+      answers: answers.map((a) => ({ question_id: a.questionId, answer: a.answer })),
+    }),
+  });
+  return {
+    attemptId: data.attempt_id,
+    mode: data.mode,
+    scoreCorrect: data.score_correct,
+    scoreTotal: data.score_total,
+    percent: data.percent,
+    results: data.results.map((r) => ({
+      questionId: r.question_id,
+      topic: r.topic,
+      correct: r.correct,
+      yourAnswer: r.your_answer,
+      referenceAnswer: r.reference_answer,
+    })),
+  };
+}
+
+export async function practiceChat(
+  attemptId: string,
+  questionId: string,
+  message: string,
+): Promise<string> {
+  const data = await apiFetch<{ reply: string }>(`/exams/attempts/${attemptId}/chat`, {
+    method: "POST",
+    body: JSON.stringify({ question_id: questionId, message }),
+  });
+  return data.reply;
+}
+
+export async function startStudyCall(
+  attemptId: string,
+  questionId?: string,
+): Promise<{
+  roomName: string;
+  accessToken: string;
+  url?: string | null;
+  question: ExamQuestion;
+}> {
+  const qs = questionId ? `?question_id=${encodeURIComponent(questionId)}` : "";
+  const data = await apiFetch<{
+    room_name: string;
+    access_token: string;
+    url?: string | null;
+    question: {
+      id: string;
+      topic: string;
+      year: number;
+      question_text: string;
+      choices?: string[] | null;
+      reference_answer?: string | null;
+      field_of_study?: string | null;
+    };
+  }>(`/exams/attempts/${attemptId}/study-call${qs}`, { method: "POST" });
+  return {
+    roomName: data.room_name,
+    accessToken: data.access_token,
+    url: data.url,
+    question: mapQuestion(data.question),
+  };
 }

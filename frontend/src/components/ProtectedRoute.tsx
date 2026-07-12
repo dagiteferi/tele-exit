@@ -23,6 +23,8 @@ export function ProtectedRoute({
 
   if (!ready) return <AppSplash />;
   if (!user) return <Navigate to="/login" />;
-  if (role && user.role !== role) return <Navigate to="/dashboard" />;
+  if (role && user.role !== role) {
+    return <Navigate to={user.role === "admin" ? "/admin/users" : "/dashboard"} />;
+  }
   return <>{children}</>;
 }

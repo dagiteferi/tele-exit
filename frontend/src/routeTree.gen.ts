@@ -13,10 +13,13 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ProgressRouteImport } from './routes/progress'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ExamsRouteImport } from './routes/exams'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CallRouteImport } from './routes/call'
 import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ExamsExamIdRouteImport } from './routes/exams.$examId'
+import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminQuestionsRouteImport } from './routes/admin.questions'
 
 const SettingsRoute = SettingsRouteImport.update({
@@ -39,6 +42,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ExamsRoute = ExamsRouteImport.update({
+  id: '/exams',
+  path: '/exams',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -59,6 +67,16 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ExamsExamIdRoute = ExamsExamIdRouteImport.update({
+  id: '/$examId',
+  path: '/$examId',
+  getParentRoute: () => ExamsRoute,
+} as any)
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/admin/users',
+  path: '/admin/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminQuestionsRoute = AdminQuestionsRouteImport.update({
   id: '/admin/questions',
   path: '/admin/questions',
@@ -70,22 +88,28 @@ export interface FileRoutesByFullPath {
   '/calendar': typeof CalendarRoute
   '/call': typeof CallRoute
   '/dashboard': typeof DashboardRoute
+  '/exams': typeof ExamsRouteWithChildren
   '/login': typeof LoginRoute
   '/progress': typeof ProgressRoute
   '/register': typeof RegisterRoute
   '/settings': typeof SettingsRoute
   '/admin/questions': typeof AdminQuestionsRoute
+  '/admin/users': typeof AdminUsersRoute
+  '/exams/$examId': typeof ExamsExamIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/calendar': typeof CalendarRoute
   '/call': typeof CallRoute
   '/dashboard': typeof DashboardRoute
+  '/exams': typeof ExamsRouteWithChildren
   '/login': typeof LoginRoute
   '/progress': typeof ProgressRoute
   '/register': typeof RegisterRoute
   '/settings': typeof SettingsRoute
   '/admin/questions': typeof AdminQuestionsRoute
+  '/admin/users': typeof AdminUsersRoute
+  '/exams/$examId': typeof ExamsExamIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -93,11 +117,14 @@ export interface FileRoutesById {
   '/calendar': typeof CalendarRoute
   '/call': typeof CallRoute
   '/dashboard': typeof DashboardRoute
+  '/exams': typeof ExamsRouteWithChildren
   '/login': typeof LoginRoute
   '/progress': typeof ProgressRoute
   '/register': typeof RegisterRoute
   '/settings': typeof SettingsRoute
   '/admin/questions': typeof AdminQuestionsRoute
+  '/admin/users': typeof AdminUsersRoute
+  '/exams/$examId': typeof ExamsExamIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -106,33 +133,42 @@ export interface FileRouteTypes {
     | '/calendar'
     | '/call'
     | '/dashboard'
+    | '/exams'
     | '/login'
     | '/progress'
     | '/register'
     | '/settings'
     | '/admin/questions'
+    | '/admin/users'
+    | '/exams/$examId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/calendar'
     | '/call'
     | '/dashboard'
+    | '/exams'
     | '/login'
     | '/progress'
     | '/register'
     | '/settings'
     | '/admin/questions'
+    | '/admin/users'
+    | '/exams/$examId'
   id:
     | '__root__'
     | '/'
     | '/calendar'
     | '/call'
     | '/dashboard'
+    | '/exams'
     | '/login'
     | '/progress'
     | '/register'
     | '/settings'
     | '/admin/questions'
+    | '/admin/users'
+    | '/exams/$examId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -140,11 +176,13 @@ export interface RootRouteChildren {
   CalendarRoute: typeof CalendarRoute
   CallRoute: typeof CallRoute
   DashboardRoute: typeof DashboardRoute
+  ExamsRoute: typeof ExamsRouteWithChildren
   LoginRoute: typeof LoginRoute
   ProgressRoute: typeof ProgressRoute
   RegisterRoute: typeof RegisterRoute
   SettingsRoute: typeof SettingsRoute
   AdminQuestionsRoute: typeof AdminQuestionsRoute
+  AdminUsersRoute: typeof AdminUsersRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -177,6 +215,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/exams': {
+      id: '/exams'
+      path: '/exams'
+      fullPath: '/exams'
+      preLoaderRoute: typeof ExamsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard': {
       id: '/dashboard'
       path: '/dashboard'
@@ -205,6 +250,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/exams/$examId': {
+      id: '/exams/$examId'
+      path: '/$examId'
+      fullPath: '/exams/$examId'
+      preLoaderRoute: typeof ExamsExamIdRouteImport
+      parentRoute: typeof ExamsRoute
+    }
+    '/admin/users': {
+      id: '/admin/users'
+      path: '/admin/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/questions': {
       id: '/admin/questions'
       path: '/admin/questions'
@@ -215,16 +274,28 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ExamsRouteChildren {
+  ExamsExamIdRoute: typeof ExamsExamIdRoute
+}
+
+const ExamsRouteChildren: ExamsRouteChildren = {
+  ExamsExamIdRoute: ExamsExamIdRoute,
+}
+
+const ExamsRouteWithChildren = ExamsRoute._addFileChildren(ExamsRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CalendarRoute: CalendarRoute,
   CallRoute: CallRoute,
   DashboardRoute: DashboardRoute,
+  ExamsRoute: ExamsRouteWithChildren,
   LoginRoute: LoginRoute,
   ProgressRoute: ProgressRoute,
   RegisterRoute: RegisterRoute,
   SettingsRoute: SettingsRoute,
   AdminQuestionsRoute: AdminQuestionsRoute,
+  AdminUsersRoute: AdminUsersRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
