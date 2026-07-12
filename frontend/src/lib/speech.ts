@@ -1,5 +1,7 @@
 /** Browser Web Speech helpers for the study-call opening. */
 
+import { getCoachPrefs, resolveCoachVoice } from "@/lib/coachPrefs";
+
 let resumeTimer: number | null = null;
 
 export function warmVoices() {
@@ -11,19 +13,7 @@ export function warmVoices() {
 }
 
 export function pickEnglishVoice(): SpeechSynthesisVoice | null {
-  if (typeof window === "undefined" || !window.speechSynthesis) return null;
-  const voices = window.speechSynthesis.getVoices();
-  if (!voices.length) return null;
-  return (
-    voices.find(
-      (v) =>
-        /en(-|_)?(US|GB)/i.test(v.lang) &&
-        /Google|Natural|Samantha|Neural|Microsoft/i.test(v.name),
-    ) ||
-    voices.find((v) => v.lang.toLowerCase().startsWith("en")) ||
-    voices[0] ||
-    null
-  );
+  return resolveCoachVoice(getCoachPrefs());
 }
 
 export function buildCallOpening(examTitle: string, questionIndex: number): string {
@@ -41,7 +31,6 @@ export function buildCallOpening(examTitle: string, questionIndex: number): stri
     `Good to have you here. Let's practice ${name} from question ${q}. I'm sharing the question now — take a breath, then say what you'd try first.`,
   ];
 
-  // Prefer variety across calls; avoid always picking index 0.
   const pick =
     (Date.now() + q * 17 + Math.floor(Math.random() * openings.length)) % openings.length;
   return openings[pick] ?? openings[0];
@@ -85,7 +74,6 @@ export function buildWelcomeLine(examTitle: string, questionIndex: number): stri
 function startResumeKeepAlive() {
   stopResumeKeepAlive();
   if (typeof window === "undefined" || !window.speechSynthesis) return;
-  // Chrome often pauses TTS mid-sentence; nudge it back.
   resumeTimer = window.setInterval(() => {
     try {
       if (window.speechSynthesis.paused || window.speechSynthesis.speaking) {
@@ -106,7 +94,7 @@ function stopResumeKeepAlive() {
 
 /**
  * Speak immediately from a click handler so browsers allow audio.
- * Keeps speaking across SPA navigation to /call.
+ * Uses Settings → coach voice / rate / pitch when available.
  */
 export function speakNow(
   text: string,
@@ -120,11 +108,12 @@ export function speakNow(
   window.speechSynthesis.cancel();
   warmVoices();
 
+  const prefs = getCoachPrefs();
   const utter = new SpeechSynthesisUtterance(text);
-  utter.rate = 0.92;
-  utter.pitch = 1.02;
+  utter.rate = prefs.rate;
+  utter.pitch = prefs.pitch;
   utter.volume = 1;
-  const voice = pickEnglishVoice();
+  const voice = resolveCoachVoice(prefs);
   if (voice) utter.voice = voice;
 
   utter.onstart = () => {
@@ -140,7 +129,6 @@ export function speakNow(
     opts?.onEnd?.();
   };
 
-  // Must stay synchronous with the user gesture — no setTimeout before speak().
   window.speechSynthesis.speak(utter);
   window.speechSynthesis.resume();
 
@@ -153,7 +141,6 @@ export function speakNow(
   };
 }
 
-/** Estimated UI cue times for the opening script (ms from speak start). */
 export const CALL_OPENING_CUES = {
   sharingMs: 2800,
   questionMs: 5200,
