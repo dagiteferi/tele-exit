@@ -67,6 +67,9 @@ Thumbs.db
 
 # Node / frontend
 node_modules/
+frontend/.output/
+frontend/.vercel/
+frontend/dist/
 
 # Project tooling
 .qodo/

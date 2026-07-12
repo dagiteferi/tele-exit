@@ -2,6 +2,12 @@
 
 FastAPI service implementing Spec v3: auth, admin ingestion, field-filtered exams, multi-agent study coaching, calendar invites, and reports.
 
+| | |
+|---|---|
+| **Live Swagger** | https://heavenonearth7-tele-exit-backend.hf.space/docs |
+| **Live health** | https://heavenonearth7-tele-exit-backend.hf.space/health |
+| **HF Space** | https://huggingface.co/spaces/Heavenonearth7/tele-exit-backend |
+
 ## Run locally
 
 ```bash
