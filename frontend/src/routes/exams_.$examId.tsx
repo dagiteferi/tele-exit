@@ -111,11 +111,13 @@ function ExamSessionPage() {
   const [chatOpen, setChatOpen] = useState<Record<string, boolean>>({});
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
+  const [chatStreaming, setChatStreaming] = useState(false);
   const [callBusy, setCallBusy] = useState(false);
   const [result, setResult] = useState<AttemptResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [booting, setBooting] = useState(true);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const streamGenRef = useRef(0);
 
   const start = useMutation({
     mutationFn: () => startExamAttempt(examId, mode as ExamMode),
@@ -209,9 +211,12 @@ function ExamSessionPage() {
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [chatLog.length, current?.id]);
+  }, [chatLog.length, chatBusy, chatStreaming, current?.id, chatLog[chatLog.length - 1]?.text]);
 
   function goTo(i: number) {
+    streamGenRef.current += 1;
+    setChatBusy(false);
+    setChatStreaming(false);
     setIndex(i);
     setChatInput("");
   }
@@ -223,9 +228,44 @@ function ExamSessionPage() {
     // Do not auto-reveal the bank answer — student opens it with Show answer.
   }
 
-  async function sendChat() {
-    if (!attemptId || !current || !chatInput.trim() || chatBusy) return;
-    const msg = chatInput.trim();
+  async function streamAiText(qid: string, full: string) {
+    const gen = ++streamGenRef.current;
+    setChatStreaming(true);
+    setChatByQuestion((prev) => ({
+      ...prev,
+      [qid]: [...(prev[qid] || []), { who: "ai", text: "" }],
+    }));
+
+    try {
+      // Reveal in small chunks so Markdown/math still reads smoothly.
+      const step = Math.max(2, Math.ceil(full.length / 80));
+      for (let i = step; i < full.length; i += step) {
+        if (streamGenRef.current !== gen) return;
+        const slice = full.slice(0, i);
+        setChatByQuestion((prev) => {
+          const log = [...(prev[qid] || [])];
+          const last = log[log.length - 1];
+          if (last?.who === "ai") log[log.length - 1] = { who: "ai", text: slice };
+          return { ...prev, [qid]: log };
+        });
+        await new Promise((r) => setTimeout(r, 18));
+      }
+      if (streamGenRef.current !== gen) return;
+      setChatByQuestion((prev) => {
+        const log = [...(prev[qid] || [])];
+        const last = log[log.length - 1];
+        if (last?.who === "ai") log[log.length - 1] = { who: "ai", text: full };
+        return { ...prev, [qid]: log };
+      });
+    } finally {
+      if (streamGenRef.current === gen) setChatStreaming(false);
+    }
+  }
+
+  async function sendChat(preset?: string) {
+    if (!attemptId || !current || chatBusy || chatStreaming) return;
+    const msg = (preset ?? chatInput).trim();
+    if (!msg) return;
     const qid = current.id;
     setChatInput("");
     setChatBusy(true);
@@ -235,11 +275,10 @@ function ExamSessionPage() {
     }));
     try {
       const reply = await practiceChat(attemptId, qid, msg);
-      setChatByQuestion((prev) => ({
-        ...prev,
-        [qid]: [...(prev[qid] || []), { who: "ai", text: reply }],
-      }));
+      setChatBusy(false);
+      await streamAiText(qid, reply || "Let's walk through this step by step.");
     } catch (err) {
+      setChatBusy(false);
       setChatByQuestion((prev) => ({
         ...prev,
         [qid]: [
@@ -247,8 +286,6 @@ function ExamSessionPage() {
           { who: "ai", text: err instanceof Error ? err.message : "Chat failed." },
         ],
       }));
-    } finally {
-      setChatBusy(false);
     }
   }
 
@@ -571,14 +608,15 @@ function ExamSessionPage() {
                 </p>
               </div>
               <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4 text-sm">
-                {chatLog.length === 0 && (
+                {chatLog.length === 0 && !chatBusy && (
                   <div className="flex flex-wrap gap-2">
                     {coachQuickPrompts(current, yourAnswer, isCorrect).map((prompt) => (
                       <button
                         key={prompt}
                         type="button"
-                        onClick={() => setChatInput(prompt)}
-                        className="rounded-full border border-hairline px-3 py-1 text-xs text-primary hover:bg-secondary"
+                        disabled={chatBusy || chatStreaming}
+                        onClick={() => void sendChat(prompt)}
+                        className="rounded-full border border-hairline px-3 py-1 text-xs text-primary hover:bg-secondary disabled:opacity-50"
                       >
                         {prompt}
                       </button>
@@ -595,15 +633,30 @@ function ExamSessionPage() {
                         : "bg-secondary text-foreground")
                     }
                   >
-                    {t.who === "ai" ? <ChatMarkdown text={t.text} /> : t.text}
+                    {t.who === "ai" ? (
+                      <ChatMarkdown text={t.text || (chatStreaming && i === chatLog.length - 1 ? "…" : "")} />
+                    ) : (
+                      t.text
+                    )}
                   </div>
                 ))}
+                {chatBusy && (
+                  <div
+                    className="flex max-w-[92%] items-center gap-1.5 rounded-lg bg-secondary px-3 py-2.5 text-muted-foreground"
+                    aria-label="AI is typing"
+                  >
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.2s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.1s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70" />
+                  </div>
+                )}
                 <div ref={chatEndRef} />
               </div>
               <div className="flex gap-2 border-t border-hairline p-3">
                 <input
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
+                  disabled={chatBusy || chatStreaming}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
@@ -611,11 +664,11 @@ function ExamSessionPage() {
                     }
                   }}
                   placeholder="Ask anything about this question…"
-                  className="flex-1 rounded-lg border border-input px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex-1 rounded-lg border border-input px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
                 />
                 <button
                   type="button"
-                  disabled={chatBusy || !chatInput.trim()}
+                  disabled={chatBusy || chatStreaming || !chatInput.trim()}
                   onClick={() => void sendChat()}
                   className="rounded-lg bg-primary px-3.5 py-2 text-sm text-primary-foreground disabled:opacity-50"
                 >
