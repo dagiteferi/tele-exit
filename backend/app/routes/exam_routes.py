@@ -10,6 +10,7 @@ from app.core.di import (
     AppContainer,
     get_container,
 )
+from app.domain.practice_coach import coach_reply
 from app.schemas import (
     ExamDetailOut,
     ExamOut,
@@ -250,20 +251,14 @@ async def practice_chat(
     if question is None:
         raise HTTPException(status_code=404, detail="Question not found")
 
-    system = (
-        "You are Tele-Exit, a supportive exit-exam study coach. "
-        "Explain clearly, give hints first, and only reveal the full answer if asked. "
-        "Keep replies concise (under 180 words)."
+    message = (body.message or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Message is required")
+
+    reply = await coach_reply(container.llm, question, message)
+    return PracticeChatResponse(
+        reply=reply or "Let's walk through this step by step.",
     )
-    prompt = (
-        f"Field topic: {question['topic']}\n"
-        f"Question: {question['question_text']}\n"
-        f"Reference answer (for your guidance only): {question['reference_answer']}\n"
-        f"Explanation (for your guidance only): {question.get('explanation') or 'n/a'}\n"
-        f"Student message: {body.message}\n"
-    )
-    reply = await container.llm.generate(prompt, system=system)
-    return PracticeChatResponse(reply=reply.strip() or "Let's walk through this step by step.")
 
 
 @router.post("/attempts/{attempt_id}/study-call", response_model=StudyCallResponse)

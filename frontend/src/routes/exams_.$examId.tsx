@@ -11,6 +11,7 @@ import {
   type ExamMode,
   type ExamQuestion,
 } from "@/lib/api";
+import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { StudentShell } from "@/components/StudentShell";
 
@@ -572,18 +573,16 @@ function ExamSessionPage() {
               <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4 text-sm">
                 {chatLog.length === 0 && (
                   <div className="flex flex-wrap gap-2">
-                    {["Give me a hint", "Explain why C is correct", "Why is my answer wrong?"].map(
-                      (prompt) => (
-                        <button
-                          key={prompt}
-                          type="button"
-                          onClick={() => setChatInput(prompt)}
-                          className="rounded-full border border-hairline px-3 py-1 text-xs text-primary hover:bg-secondary"
-                        >
-                          {prompt}
-                        </button>
-                      ),
-                    )}
+                    {coachQuickPrompts(current, yourAnswer, isCorrect).map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        onClick={() => setChatInput(prompt)}
+                        className="rounded-full border border-hairline px-3 py-1 text-xs text-primary hover:bg-secondary"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
                   </div>
                 )}
                 {chatLog.map((t, i) => (
@@ -596,7 +595,7 @@ function ExamSessionPage() {
                         : "bg-secondary text-foreground")
                     }
                   >
-                    {t.text}
+                    {t.who === "ai" ? <ChatMarkdown text={t.text} /> : t.text}
                   </div>
                 ))}
                 <div ref={chatEndRef} />
@@ -751,6 +750,37 @@ function answersRoughlyMatch(reference: string, given: string): boolean {
   const letter = b.match(/^([a-d])\b/);
   if (letter && a.startsWith(letter[1])) return true;
   return false;
+}
+
+function correctAnswerLetter(q: ExamQuestion): string | null {
+  const ref = (q.referenceAnswer || "").trim();
+  const fromRef = ref.match(/^([A-D])\b/i);
+  if (fromRef) return fromRef[1].toUpperCase();
+  for (const choice of normalizeChoices(q)) {
+    if (answersRoughlyMatch(ref, choice)) {
+      const fromChoice = choice.match(/^([A-D])\b/i);
+      if (fromChoice) return fromChoice[1].toUpperCase();
+    }
+  }
+  return null;
+}
+
+function coachQuickPrompts(
+  q: ExamQuestion,
+  yourAnswer: string,
+  isCorrect: boolean | null,
+): string[] {
+  const letter = correctAnswerLetter(q);
+  const prompts = ["Give me a hint"];
+  prompts.push(
+    letter ? `Explain why ${letter} is correct` : "Explain the correct answer",
+  );
+  if (yourAnswer.trim() && isCorrect === false) {
+    prompts.push("Why is my answer wrong?");
+  } else {
+    prompts.push("Walk me through this step by step");
+  }
+  return prompts;
 }
 
 /** Prefer API choices; fall back to A–D lines embedded in the question text. */
