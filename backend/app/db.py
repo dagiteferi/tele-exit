@@ -11,7 +11,15 @@ SCHEMA_PATH = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
 def ensure_schema(connection: sqlite3.Connection) -> None:
     schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
     connection.executescript(schema_sql)
+    # Existing DBs already have exam_questions without newer columns —
+    # migrate before creating indexes that reference them.
     _migrate_exam_question_columns(connection)
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_exam_questions_exam ON exam_questions(exam_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_exam_questions_field ON exam_questions(field_of_study)"
+    )
     connection.commit()
 
 

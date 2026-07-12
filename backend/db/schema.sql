@@ -106,6 +106,4 @@ CREATE TABLE IF NOT EXISTS exam_attempts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_exams_field ON exams(field_of_study);
-CREATE INDEX IF NOT EXISTS idx_exam_questions_exam ON exam_questions(exam_id);
-CREATE INDEX IF NOT EXISTS idx_exam_questions_field ON exam_questions(field_of_study);
 CREATE INDEX IF NOT EXISTS idx_exam_attempts_student ON exam_attempts(student_id);

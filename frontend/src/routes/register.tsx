@@ -123,7 +123,7 @@ function RegisterPage() {
     try {
       const { user, token } = await registerStudent(parsed.data);
       login(user, token);
-      navigate({ to: user.role === "admin" ? "/admin/questions" : "/dashboard" });
+      navigate({ to: user.role === "admin" ? "/admin/users" : "/dashboard" });
     } catch (err) {
       setSubmitError(
         err instanceof Error
