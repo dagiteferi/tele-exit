@@ -24,7 +24,7 @@ def test_health_endpoint(tmp_path, monkeypatch):
     with TestClient(app) as client:
         response = client.get("/health")
         assert response.status_code == 200
-        assert response.json() == {"status": "ok"}
+        assert response.json() == {"status": "ok", "use_fakes": True}
 
     reset_container()
     clear_settings_cache()

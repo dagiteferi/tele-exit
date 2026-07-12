@@ -8,7 +8,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 _ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
-load_dotenv(_ENV_FILE, override=True)
+# Do not override existing process env (keeps pytest monkeypatch working).
+load_dotenv(_ENV_FILE, override=False)
 
 
 @dataclass(frozen=True)
@@ -38,7 +39,6 @@ def _env_bool(name: str, default: bool) -> bool:
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    load_dotenv(_ENV_FILE, override=True)
     return Settings(
         jwt_secret=os.getenv("JWT_SECRET", "change-me-to-a-real-secret"),
         use_fakes=_env_bool("USE_FAKES", True),
