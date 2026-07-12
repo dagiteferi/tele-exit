@@ -109,7 +109,7 @@ function SettingsPage() {
             Preferences
           </h1>
           <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-            Coach presentation, voice clarity, reports, and your account profile.
+            Change the AI coach’s look and speaking voice, then manage reports and your account.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -130,7 +130,7 @@ function SettingsPage() {
             disabled={previewing}
             className="rounded-md bg-primary px-3.5 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
-            {previewing ? "Speaking…" : "Preview voice"}
+            {previewing ? "Speaking…" : "Hear AI voice"}
           </button>
         </div>
       </header>
@@ -138,7 +138,7 @@ function SettingsPage() {
       {/* Summary strip */}
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
-          label="Active coach"
+          label="AI avatar"
           value={avatar.name}
           hint={avatar.title}
           leading={
@@ -150,29 +150,64 @@ function SettingsPage() {
             </span>
           }
         />
-        <SummaryCard label="Voice" value={voiceLabel} hint={`${prefs.rate.toFixed(2)}× · pitch ${prefs.pitch.toFixed(2)}`} />
         <SummaryCard
-          label="Captions"
-          value={prefs.captionsLarge ? "Large" : "Standard"}
-          hint="Live text on study calls"
+          label="AI voice"
+          value={voiceLabel}
+          hint={`${prefs.rate.toFixed(2)}× speed · pitch ${prefs.pitch.toFixed(2)}`}
         />
         <SummaryCard
-          label="Reports"
+          label="Your captions"
+          value={prefs.captionsLarge ? "Large" : "Standard"}
+          hint="Text size on the study call"
+        />
+        <SummaryCard
+          label="Email reports"
           value={freq ? freq.charAt(0).toUpperCase() + freq.slice(1) : "—"}
-          hint="Email progress summary"
+          hint="Practice summary cadence"
         />
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
         {/* Coach presentation */}
         <Panel
-          title="Study coach"
-          subtitle="Who appears on shared calls and how they sound."
+          title="Change AI coach"
+          subtitle="These settings control the AI on your study call — how it looks, how it talks, and how captions appear."
         >
-          <div className="space-y-6">
+          <div className="space-y-8">
+            <div className="rounded-lg border border-hairline bg-[var(--surface)] px-4 py-3 text-sm text-muted-foreground">
+              <p className="font-medium text-primary">How this works</p>
+              <ol className="mt-2 list-decimal space-y-1 pl-4 text-xs leading-relaxed">
+                <li>
+                  Pick an <strong className="font-medium text-primary">AI avatar</strong> — the name
+                  and tile you see beside you on the call.
+                </li>
+                <li>
+                  Change the <strong className="font-medium text-primary">AI voice</strong> — who
+                  speaks when the coach explains a question.
+                </li>
+                <li>
+                  Tap <strong className="font-medium text-primary">Preview voice</strong> to hear it,
+                  then join a study call anytime.
+                </li>
+              </ol>
+            </div>
+
+            {/* Step 1 — Avatar */}
             <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Avatar
+              <div className="flex items-baseline gap-2">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
+                  1
+                </span>
+                <div>
+                  <p className="text-sm font-medium text-primary">Choose AI avatar</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    This is only the look and name of the coach — not the exam answers.
+                  </p>
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                Now using: <span className="font-medium text-primary">{avatar.name}</span> (
+                {avatar.title})
               </p>
               <ul className="mt-3 divide-y divide-hairline rounded-lg border border-hairline">
                 {COACH_AVATARS.map((a) => {
@@ -194,9 +229,14 @@ function SettingsPage() {
                           {a.initials}
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="flex items-center gap-2">
+                          <span className="flex flex-wrap items-center gap-2">
                             <span className="font-medium text-primary">{a.name}</span>
                             <span className="text-xs text-muted-foreground">{a.title}</span>
+                            {active && (
+                              <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                                Selected
+                              </span>
+                            )}
                           </span>
                           <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
                             {a.blurb}
@@ -211,7 +251,9 @@ function SettingsPage() {
                           }
                           aria-hidden
                         >
-                          {active && <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />}
+                          {active && (
+                            <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />
+                          )}
                         </span>
                       </button>
                     </li>
@@ -220,22 +262,38 @@ function SettingsPage() {
               </ul>
             </div>
 
+            {/* Step 2 — Voice */}
             <div className="border-t border-hairline pt-6">
-              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Voice
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Uses your browser’s speech voices. Chrome typically offers the clearest options.
-              </p>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex items-baseline gap-2">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
+                    2
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium text-primary">Change AI speaking voice</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      This is the voice you hear when the AI coach talks out loud.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={previewVoice}
+                  disabled={previewing}
+                  className="rounded-md border border-input px-3 py-1.5 text-xs text-primary transition-colors hover:bg-secondary disabled:opacity-50"
+                >
+                  {previewing ? "Speaking…" : "Hear AI voice"}
+                </button>
+              </div>
 
               <label className="mt-4 block text-sm text-primary">
-                <span className="text-xs text-muted-foreground">Selected voice</span>
+                <span className="text-xs text-muted-foreground">AI voice</span>
                 <select
                   className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm"
                   value={prefs.voiceName}
                   onChange={(e) => patchPrefs({ voiceName: e.target.value })}
                 >
-                  <option value="">Auto — match avatar</option>
+                  <option value="">Auto — pick a voice that fits {avatar.name}</option>
                   {voices.map((v) => (
                     <option key={`${v.name}-${v.lang}`} value={v.name}>
                       {v.name} ({v.lang})
@@ -245,42 +303,72 @@ function SettingsPage() {
               </label>
               {voices.length === 0 && (
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Loading voices… If this stays empty, try Chrome.
+                  Loading voices… If this stays empty, open Settings in Chrome.
                 </p>
               )}
+              <p className="mt-2 text-xs text-muted-foreground">
+                Voices come from your browser. Changing this only affects how the AI speaks — not
+                your microphone.
+              </p>
 
               <div className="mt-5 grid gap-5 sm:grid-cols-2">
                 <SliderField
-                  label="Speaking speed"
+                  label="How fast the AI speaks"
                   value={prefs.rate}
                   min={0.75}
                   max={1.2}
                   display={`${prefs.rate.toFixed(2)}×`}
-                  hint={prefs.rate < 0.9 ? "Clearer" : prefs.rate > 1.05 ? "Faster" : "Balanced"}
+                  hint={
+                    prefs.rate < 0.9
+                      ? "Slower — easier to follow"
+                      : prefs.rate > 1.05
+                        ? "Faster — quicker explanations"
+                        : "Balanced pace"
+                  }
                   onChange={(n) => patchPrefs({ rate: n })}
                 />
                 <SliderField
-                  label="Pitch"
+                  label="AI voice pitch"
                   value={prefs.pitch}
                   min={0.85}
                   max={1.2}
                   display={prefs.pitch.toFixed(2)}
-                  hint={prefs.pitch < 0.95 ? "Deeper" : prefs.pitch > 1.08 ? "Brighter" : "Natural"}
+                  hint={
+                    prefs.pitch < 0.95
+                      ? "Deeper tone"
+                      : prefs.pitch > 1.08
+                        ? "Brighter tone"
+                        : "Natural tone"
+                  }
                   onChange={(n) => patchPrefs({ pitch: n })}
                 />
               </div>
+            </div>
 
+            {/* Step 3 — Captions */}
+            <div className="border-t border-hairline pt-6">
+              <div className="flex items-baseline gap-2">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
+                  3
+                </span>
+                <div>
+                  <p className="text-sm font-medium text-primary">Call captions</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Size of the live text that shows what you say on the study call.
+                  </p>
+                </div>
+              </div>
               <button
                 type="button"
                 role="switch"
                 aria-checked={prefs.captionsLarge}
                 onClick={() => patchPrefs({ captionsLarge: !prefs.captionsLarge })}
-                className="mt-5 flex w-full items-center justify-between gap-4 rounded-lg border border-hairline px-4 py-3 text-left transition-colors hover:bg-[var(--surface)]"
+                className="mt-4 flex w-full items-center justify-between gap-4 rounded-lg border border-hairline px-4 py-3 text-left transition-colors hover:bg-[var(--surface)]"
               >
                 <span>
-                  <span className="block text-sm text-primary">Larger live captions</span>
+                  <span className="block text-sm text-primary">Use larger captions</span>
                   <span className="mt-0.5 block text-xs text-muted-foreground">
-                    Easier to read what you say during the call
+                    Turn on if the caption bar at the bottom of the call is hard to read
                   </span>
                 </span>
                 <span
@@ -372,14 +460,14 @@ function SettingsPage() {
 
           <article className="rounded-xl border border-hairline bg-primary p-5 text-primary-foreground">
             <p className="text-xs uppercase tracking-wider text-primary-foreground/65">
-              Study call tip
+              Try it
             </p>
             <h2 className="mt-2 font-display text-xl leading-snug">
-              Preview before you join
+              Hear your AI coach
             </h2>
             <p className="mt-2 text-sm text-primary-foreground/75">
-              Use Preview voice after changing avatar or speed so the first line on your next call
-              already sounds right.
+              After you change avatar or voice, tap below. That same voice will speak on your next
+              study call.
             </p>
             <button
               type="button"
@@ -387,7 +475,7 @@ function SettingsPage() {
               disabled={previewing}
               className="mt-5 rounded-md bg-[var(--amber)] px-3.5 py-2 text-sm font-medium text-[var(--ink)] disabled:opacity-50"
             >
-              {previewing ? "Speaking…" : "Hear sample"}
+              {previewing ? "Speaking…" : "Hear AI voice"}
             </button>
           </article>
         </div>
