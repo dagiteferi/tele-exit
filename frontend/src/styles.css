@@ -190,6 +190,31 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes tx-meet-share-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.86) translateY(18px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.015) translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes tx-meet-bar {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes tx-caption-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 @keyframes tx-pulse {
   0%, 100% { opacity: 0.35; }
   50%      { opacity: 1; }
@@ -202,6 +227,19 @@
 
 @utility fade-in {
   animation: tx-fade-in 180ms ease-out both;
+}
+
+@utility meet-share-in {
+  animation: tx-meet-share-in 720ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: center center;
+}
+
+@utility meet-presenting-bar {
+  animation: tx-meet-bar 320ms ease-out both;
+}
+
+@utility meet-caption-in {
+  animation: tx-caption-in 220ms ease-out both;
 }
 
 @utility pulse-dot {

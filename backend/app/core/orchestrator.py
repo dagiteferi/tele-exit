@@ -73,4 +73,17 @@ class Orchestrator:
                 "agent_used": result.agent_used,
             }
         )
+
+        video = result.metadata.get("video") if isinstance(result.metadata, dict) else None
+        if isinstance(video, dict) and video.get("url"):
+            messages.append(
+                {
+                    "type": "video_card",
+                    "title": video.get("title", ""),
+                    "url": video.get("url", ""),
+                    "timestamp": video.get("timestamp", "0:00"),
+                    "description": video.get("description", ""),
+                }
+            )
+
         return messages

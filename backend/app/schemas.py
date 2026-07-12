@@ -231,10 +231,21 @@ class SubmitAttemptResponse(BaseModel):
 class PracticeChatRequest(BaseModel):
     question_id: str
     message: str = Field(min_length=1, max_length=2000)
+    mode: str | None = Field(default=None, description="practice | voice")
+
+
+class PracticeChatVideo(BaseModel):
+    title: str = ""
+    url: str = ""
+    timestamp: str = "0:00"
+    description: str = ""
 
 
 class PracticeChatResponse(BaseModel):
     reply: str
+    agent_used: str | None = None
+    action: str | None = None
+    video: PracticeChatVideo | None = None
 
 
 class StudyCallResponse(BaseModel):
