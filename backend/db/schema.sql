@@ -60,14 +60,28 @@ CREATE TABLE IF NOT EXISTS outbox (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS exams (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    field_of_study TEXT NOT NULL,
+    year INTEGER,
+    description TEXT,
+    created_by TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS exam_questions (
     id TEXT PRIMARY KEY,
+    exam_id TEXT,
+    field_of_study TEXT,
     topic TEXT NOT NULL,
     year INTEGER NOT NULL,
     question_text TEXT NOT NULL,
     reference_answer TEXT NOT NULL,
+    choices_json TEXT,
     source TEXT NOT NULL DEFAULT 'user_uploaded',
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (exam_id) REFERENCES exams(id)
 );
 
 -- Stock SQLite stand-in for sqlite-vec vec0 (swap later behind VectorStorePort)
@@ -76,3 +90,22 @@ CREATE TABLE IF NOT EXISTS question_embeddings (
     embedding TEXT NOT NULL,
     FOREIGN KEY (question_id) REFERENCES exam_questions(id)
 );
+
+CREATE TABLE IF NOT EXISTS exam_attempts (
+    id TEXT PRIMARY KEY,
+    exam_id TEXT NOT NULL,
+    student_id TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    score_correct INTEGER NOT NULL DEFAULT 0,
+    score_total INTEGER NOT NULL DEFAULT 0,
+    answers_json TEXT NOT NULL DEFAULT '[]',
+    started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TEXT,
+    FOREIGN KEY (exam_id) REFERENCES exams(id),
+    FOREIGN KEY (student_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_exams_field ON exams(field_of_study);
+CREATE INDEX IF NOT EXISTS idx_exam_questions_exam ON exam_questions(exam_id);
+CREATE INDEX IF NOT EXISTS idx_exam_questions_field ON exam_questions(field_of_study);
+CREATE INDEX IF NOT EXISTS idx_exam_attempts_student ON exam_attempts(student_id);

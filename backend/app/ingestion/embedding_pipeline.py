@@ -5,17 +5,11 @@ from dataclasses import (
     dataclass,
     field,
 )
+from typing import Any
 
 from app.domain.models import ExamQuestion
 from app.ports.embedding_port import EmbeddingPort
 from app.ports.vector_store_port import VectorStorePort
-
-REQUIRED_FIELDS = (
-    "topic",
-    "year",
-    "question_text",
-    "reference_answer",
-)
 
 
 @dataclass
@@ -25,23 +19,74 @@ class IngestResult:
     errors: list[str] = field(default_factory=list)
 
 
-def _validate_raw_question(raw: dict, index: int) -> dict:
-    missing = [name for name in REQUIRED_FIELDS if not str(raw.get(name, "")).strip()]
+def _pick(raw: dict, *keys: str) -> Any:
+    for key in keys:
+        if key in raw and raw[key] is not None and str(raw[key]).strip() != "":
+            return raw[key]
+    return None
+
+
+def _normalize_choices(raw: Any) -> list[str] | None:
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, list):
+        return [str(item).strip() for item in raw if str(item).strip()]
+    if isinstance(raw, str):
+        text = raw.strip()
+        if text.startswith("["):
+            import json
+
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed if str(item).strip()]
+            except json.JSONDecodeError:
+                pass
+        # pipe or semicolon separated
+        parts = [p.strip() for p in text.replace(";", "|").split("|") if p.strip()]
+        return parts or None
+    return None
+
+
+def _validate_raw_question(
+    raw: dict,
+    index: int,
+    *,
+    default_year: int | None = None,
+    field_of_study: str | None = None,
+) -> dict:
+    topic = _pick(raw, "topic", "subject", "chapter")
+    question_text = _pick(raw, "question_text", "question", "prompt", "text")
+    reference_answer = _pick(raw, "reference_answer", "answer", "correct_answer", "solution")
+    year_raw = _pick(raw, "year")
+    if year_raw is None:
+        year_raw = default_year
+
+    missing = []
+    if not topic:
+        missing.append("topic")
+    if not question_text:
+        missing.append("question_text|question")
+    if not reference_answer:
+        missing.append("reference_answer|answer")
+    if year_raw is None:
+        missing.append("year")
     if missing:
-        raise ValueError(
-            f"row {index}: missing required fields: {', '.join(missing)}"
-        )
+        raise ValueError(f"row {index}: missing required fields: {', '.join(missing)}")
 
     try:
-        year = int(raw["year"])
+        year = int(year_raw)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"row {index}: year must be an integer") from exc
 
+    choices = _normalize_choices(_pick(raw, "choices", "options"))
     return {
-        "topic": str(raw["topic"]).strip(),
+        "topic": str(topic).strip(),
         "year": year,
-        "question_text": str(raw["question_text"]).strip(),
-        "reference_answer": str(raw["reference_answer"]).strip(),
+        "question_text": str(question_text).strip(),
+        "reference_answer": str(reference_answer).strip(),
+        "choices": choices,
+        "field_of_study": field_of_study or _pick(raw, "field_of_study", "department", "field"),
     }
 
 
@@ -49,19 +94,31 @@ async def ingest_questions(
     raw_questions: list[dict],
     embedding_port: EmbeddingPort,
     vector_store_adapter: VectorStorePort,
+    *,
+    exam_id: str | None = None,
+    field_of_study: str | None = None,
+    default_year: int | None = None,
 ) -> IngestResult:
-    """Embed and store real exam questions. Skips invalid rows with error details."""
+    """Embed and store exam questions. Skips invalid rows with error details."""
     result = IngestResult()
 
     for index, raw in enumerate(raw_questions, start=1):
         try:
-            validated = _validate_raw_question(raw, index)
+            validated = _validate_raw_question(
+                raw,
+                index,
+                default_year=default_year,
+                field_of_study=field_of_study,
+            )
             question = ExamQuestion(
                 id=str(uuid.uuid4()),
                 topic=validated["topic"],
                 year=validated["year"],
                 question_text=validated["question_text"],
                 reference_answer=validated["reference_answer"],
+                exam_id=exam_id,
+                field_of_study=validated.get("field_of_study") or field_of_study,
+                choices=validated.get("choices"),
             )
             embedding = await embedding_port.embed(question.question_text)
             await vector_store_adapter.store(question, embedding)

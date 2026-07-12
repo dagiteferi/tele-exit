@@ -44,6 +44,7 @@ class FakeVectorSearch(VectorStorePort):
         text: str,
         embedding_port: EmbeddingPort,
         top_k: int = 3,
+        field_of_study: str | None = None,
     ) -> list[dict]:
         self.query_calls.append((text, top_k))
         if self._preset_matches is not None:
@@ -52,6 +53,10 @@ class FakeVectorSearch(VectorStorePort):
         query_embedding = await embedding_port.embed(text)
         scored: list[tuple[float, dict]] = []
         for record in self._records:
+            if field_of_study:
+                rec_field = record.get("field_of_study")
+                if rec_field and str(rec_field).lower() != field_of_study.lower():
+                    continue
             score = _cosine_similarity(query_embedding, record.get("embedding", []))
             keyword_bonus = _keyword_overlap(text, record.get("question_text", ""))
             scored.append((score + keyword_bonus, record))

@@ -10,7 +10,9 @@ from app.core.di import (
     reset_container,
 )
 from app.routes import (
+    admin_router,
     auth_router,
+    exam_router,
     question_router,
     report_router,
     student_router,
@@ -56,6 +58,8 @@ def create_app() -> FastAPI:
         max_age=600,
     )
     app.include_router(auth_router)
+    app.include_router(admin_router)
+    app.include_router(exam_router)
     app.include_router(question_router)
     app.include_router(student_router)
     app.include_router(report_router)

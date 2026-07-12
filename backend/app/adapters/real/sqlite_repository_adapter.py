@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
-from pathlib import Path
 from typing import Any
 
+from app.db import ensure_schema
 from app.domain.models import (
     MAX_OUTBOX_ATTEMPTS,
     WEAK_ACCURACY_THRESHOLD,
@@ -14,8 +14,6 @@ from app.domain.models import (
     TopicScore,
 )
 from app.ports.repository_port import RepositoryPort
-
-SCHEMA_PATH = Path(__file__).resolve().parents[3] / "db" / "schema.sql"
 
 
 class SQLiteRepositoryAdapter(RepositoryPort):
@@ -30,10 +28,8 @@ class SQLiteRepositoryAdapter(RepositoryPort):
         return connection
 
     def _ensure_schema(self) -> None:
-        schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
         with self._connect() as connection:
-            connection.executescript(schema_sql)
-            connection.commit()
+            ensure_schema(connection)
 
     async def create_user(
         self,
@@ -364,6 +360,192 @@ class SQLiteRepositoryAdapter(RepositoryPort):
                 (attempts, status, record_id),
             )
             connection.commit()
+
+    # -- admin / exams --------------------------------------------------------
+
+    async def list_users(self) -> list[dict]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, email, name, field_of_study, exam_date, role, created_at
+                FROM users
+                ORDER BY created_at DESC
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    async def create_exam(
+        self,
+        title: str,
+        field_of_study: str,
+        year: int | None,
+        description: str | None,
+        created_by: str | None,
+    ) -> str:
+        exam_id = str(uuid.uuid4())
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO exams (
+                    id, title, field_of_study, year, description, created_by
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (exam_id, title, field_of_study, year, description, created_by),
+            )
+            connection.commit()
+        return exam_id
+
+    async def list_exams(self, field_of_study: str | None = None) -> list[dict]:
+        with self._connect() as connection:
+            if field_of_study:
+                rows = connection.execute(
+                    """
+                    SELECT e.*, COUNT(q.id) AS question_count
+                    FROM exams e
+                    LEFT JOIN exam_questions q ON q.exam_id = e.id
+                    WHERE lower(e.field_of_study) = lower(?)
+                    GROUP BY e.id
+                    ORDER BY e.created_at DESC
+                    """,
+                    (field_of_study,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT e.*, COUNT(q.id) AS question_count
+                    FROM exams e
+                    LEFT JOIN exam_questions q ON q.exam_id = e.id
+                    GROUP BY e.id
+                    ORDER BY e.created_at DESC
+                    """
+                ).fetchall()
+        return [dict(row) for row in rows]
+
+    async def get_exam(self, exam_id: str) -> dict | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM exams WHERE id = ?",
+                (exam_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    async def list_exam_questions(self, exam_id: str) -> list[dict]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, exam_id, field_of_study, topic, year,
+                       question_text, reference_answer, choices_json, source
+                FROM exam_questions
+                WHERE exam_id = ?
+                ORDER BY created_at, topic
+                """,
+                (exam_id,),
+            ).fetchall()
+        results = []
+        for row in rows:
+            item = dict(row)
+            raw = item.pop("choices_json", None)
+            item["choices"] = json.loads(raw) if raw else None
+            results.append(item)
+        return results
+
+    async def list_all_questions(self, limit: int = 200) -> list[dict]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, exam_id, field_of_study, topic, year,
+                       question_text, reference_answer, choices_json, source
+                FROM exam_questions
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        results = []
+        for row in rows:
+            item = dict(row)
+            raw = item.pop("choices_json", None)
+            item["choices"] = json.loads(raw) if raw else None
+            results.append(item)
+        return results
+
+    async def create_exam_attempt(
+        self,
+        exam_id: str,
+        student_id: str,
+        mode: str,
+    ) -> str:
+        attempt_id = str(uuid.uuid4())
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO exam_attempts (
+                    id, exam_id, student_id, mode, answers_json
+                ) VALUES (?, ?, ?, ?, '[]')
+                """,
+                (attempt_id, exam_id, student_id, mode),
+            )
+            connection.commit()
+        return attempt_id
+
+    async def get_exam_attempt(self, attempt_id: str) -> dict | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM exam_attempts WHERE id = ?",
+                (attempt_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        item["answers"] = json.loads(item.pop("answers_json") or "[]")
+        return item
+
+    async def complete_exam_attempt(
+        self,
+        attempt_id: str,
+        answers: list[dict],
+        score_correct: int,
+        score_total: int,
+    ) -> dict:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE exam_attempts
+                SET answers_json = ?,
+                    score_correct = ?,
+                    score_total = ?,
+                    completed_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (json.dumps(answers), score_correct, score_total, attempt_id),
+            )
+            connection.commit()
+            row = connection.execute(
+                "SELECT * FROM exam_attempts WHERE id = ?",
+                (attempt_id,),
+            ).fetchone()
+        item = dict(row)
+        item["answers"] = json.loads(item.pop("answers_json") or "[]")
+        return item
+
+    async def list_student_attempts(self, student_id: str) -> list[dict]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT a.*, e.title AS exam_title, e.field_of_study
+                FROM exam_attempts a
+                JOIN exams e ON e.id = a.exam_id
+                WHERE a.student_id = ?
+                ORDER BY a.started_at DESC
+                """,
+                (student_id,),
+            ).fetchall()
+        results = []
+        for row in rows:
+            item = dict(row)
+            item["answers"] = json.loads(item.pop("answers_json") or "[]")
+            results.append(item)
+        return results
 
 
 def _readiness_percent(

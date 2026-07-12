@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from pathlib import Path
 from typing import Any
 
+from app.db import ensure_schema
 from app.ports.embedding_port import EmbeddingPort
 from app.ports.vector_store_port import VectorStorePort
-
-SCHEMA_PATH = Path(__file__).resolve().parents[3] / "db" / "schema.sql"
 
 
 class LocalVectorStoreAdapter(VectorStorePort):
@@ -25,52 +23,67 @@ class LocalVectorStoreAdapter(VectorStorePort):
         return connection
 
     def _ensure_schema(self) -> None:
-        schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
         with self._connect() as connection:
-            connection.executescript(schema_sql)
-            connection.commit()
+            ensure_schema(connection)
 
     async def store(self, question, embedding: list[float]) -> None:
         if hasattr(question, "question_text"):
             record = {
                 "id": getattr(question, "id", ""),
+                "exam_id": getattr(question, "exam_id", None),
+                "field_of_study": getattr(question, "field_of_study", None),
                 "topic": getattr(question, "topic", ""),
                 "year": int(getattr(question, "year", 0)),
                 "question_text": question.question_text,
                 "reference_answer": getattr(question, "reference_answer", ""),
+                "choices": getattr(question, "choices", None),
                 "source": getattr(question, "source", "user_uploaded"),
             }
         elif isinstance(question, dict):
             record = {
                 "id": question["id"],
+                "exam_id": question.get("exam_id"),
+                "field_of_study": question.get("field_of_study"),
                 "topic": question.get("topic", ""),
                 "year": int(question.get("year", 0)),
                 "question_text": question["question_text"],
                 "reference_answer": question.get("reference_answer", ""),
+                "choices": question.get("choices"),
                 "source": question.get("source", "user_uploaded"),
             }
         else:
             raise TypeError("question must be an ExamQuestion-like object or dict")
 
+        choices_json = (
+            json.dumps(record["choices"]) if record.get("choices") is not None else None
+        )
+
         with self._connect() as connection:
             connection.execute(
                 """
                 INSERT INTO exam_questions (
-                    id, topic, year, question_text, reference_answer, source
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    id, exam_id, field_of_study, topic, year,
+                    question_text, reference_answer, choices_json, source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
+                    exam_id = excluded.exam_id,
+                    field_of_study = excluded.field_of_study,
                     topic = excluded.topic,
                     year = excluded.year,
                     question_text = excluded.question_text,
                     reference_answer = excluded.reference_answer,
+                    choices_json = excluded.choices_json,
                     source = excluded.source
                 """,
                 (
                     record["id"],
+                    record.get("exam_id"),
+                    record.get("field_of_study"),
                     record["topic"],
                     record["year"],
                     record["question_text"],
                     record["reference_answer"],
+                    choices_json,
                     record["source"],
                 ),
             )
@@ -90,37 +103,66 @@ class LocalVectorStoreAdapter(VectorStorePort):
         text: str,
         embedding_port: EmbeddingPort,
         top_k: int = 3,
+        field_of_study: str | None = None,
     ) -> list[dict]:
         query_embedding = await embedding_port.embed(text)
         with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT
-                    q.id,
-                    q.topic,
-                    q.year,
-                    q.question_text,
-                    q.reference_answer,
-                    e.embedding
-                FROM exam_questions q
-                JOIN question_embeddings e ON e.question_id = q.id
-                """
-            ).fetchall()
+            if field_of_study:
+                rows = connection.execute(
+                    """
+                    SELECT
+                        q.id,
+                        q.exam_id,
+                        q.field_of_study,
+                        q.topic,
+                        q.year,
+                        q.question_text,
+                        q.reference_answer,
+                        q.choices_json,
+                        e.embedding
+                    FROM exam_questions q
+                    JOIN question_embeddings e ON e.question_id = q.id
+                    WHERE q.field_of_study IS NULL
+                       OR lower(q.field_of_study) = lower(?)
+                    """,
+                    (field_of_study,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT
+                        q.id,
+                        q.exam_id,
+                        q.field_of_study,
+                        q.topic,
+                        q.year,
+                        q.question_text,
+                        q.reference_answer,
+                        q.choices_json,
+                        e.embedding
+                    FROM exam_questions q
+                    JOIN question_embeddings e ON e.question_id = q.id
+                    """
+                ).fetchall()
 
         scored: list[tuple[float, dict[str, Any]]] = []
         for row in rows:
             stored = json.loads(row["embedding"])
             score = _cosine_similarity(query_embedding, stored)
             score += _keyword_overlap(text, row["question_text"])
+            choices_raw = row["choices_json"]
             scored.append(
                 (
                     score,
                     {
                         "id": row["id"],
+                        "exam_id": row["exam_id"],
+                        "field_of_study": row["field_of_study"],
                         "topic": row["topic"],
                         "year": row["year"],
                         "question_text": row["question_text"],
                         "reference_answer": row["reference_answer"],
+                        "choices": json.loads(choices_raw) if choices_raw else None,
                     },
                 )
             )
