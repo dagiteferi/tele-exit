@@ -4,6 +4,9 @@ Responsive web client for Tele-Exit: student study flows, live study call, calen
 
 Built with **TanStack Start**, **React**, **Vite**, and **Tailwind CSS**.
 
+**Live app:** https://tele-exit.vercel.app/  
+**API Swagger:** https://heavenonearth7-tele-exit-backend.hf.space/docs
+
 ## Run locally
 
 ```bash

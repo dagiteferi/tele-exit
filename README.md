@@ -11,6 +11,15 @@ Tele-Exit turns a fragmented, high-stakes study problem into a focused one-on-on
 | **Stack** | FastAPI (Python) · TanStack Start / React · SQLite · Gemini · Tavily · YouTube · Gmail SMTP |
 | **Status** | Demo-ready |
 
+### Live demo
+
+| Surface | URL |
+|---------|-----|
+| **Frontend** (Vercel) | https://tele-exit.vercel.app/ |
+| **Backend API docs** (Swagger) | https://heavenonearth7-tele-exit-backend.hf.space/docs |
+| **Backend health** | https://heavenonearth7-tele-exit-backend.hf.space/health |
+| **Backend Space** | https://huggingface.co/spaces/Heavenonearth7/tele-exit-backend |
+
 ---
 
 ## Why Tele-Exit
