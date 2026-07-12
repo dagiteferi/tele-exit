@@ -17,6 +17,7 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
     _migrate_exam_attempt_progress(connection)
     _migrate_calendar_and_summaries(connection)
     _migrate_product_knowledge(connection)
+    _migrate_password_reset_tokens(connection)
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_exam_questions_exam ON exam_questions(exam_id)"
     )
@@ -110,4 +111,23 @@ def _migrate_product_knowledge(connection: sqlite3.Connection) -> None:
             FOREIGN KEY (chunk_id) REFERENCES product_chunks(id) ON DELETE CASCADE
         )
         """
+    )
+
+
+def _migrate_password_reset_tokens(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE,
+            expires_at TEXT NOT NULL,
+            used_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id)"
     )

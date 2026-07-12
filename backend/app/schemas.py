@@ -35,6 +35,25 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ForgotPasswordResponse(BaseModel):
+    message: str = (
+        "If that email is registered, we sent a password reset link. Check your inbox."
+    )
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=10, max_length=500)
+    new_password: str = Field(min_length=6, max_length=200)
+
+
+class ResetPasswordResponse(BaseModel):
+    message: str = "Password updated. You can log in with your new password."
+
+
 class MeResponse(BaseModel):
     student_id: str
     name: str

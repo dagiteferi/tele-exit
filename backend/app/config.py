@@ -30,6 +30,7 @@ class Settings:
     smtp_password: str = ""
     smtp_from: str = ""
     smtp_use_tls: bool = True
+    frontend_url: str = "http://localhost:3000"
     livekit_url: str = ""
     livekit_api_key: str = ""
     livekit_api_secret: str = ""
@@ -76,6 +77,7 @@ def get_settings() -> Settings:
         smtp_password=os.getenv("SMTP_PASSWORD", ""),
         smtp_from=os.getenv("SMTP_FROM", "") or os.getenv("SMTP_USER", ""),
         smtp_use_tls=_env_bool("SMTP_USE_TLS", True),
+        frontend_url=os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/"),
         livekit_url=os.getenv("LIVEKIT_URL", ""),
         livekit_api_key=os.getenv("LIVEKIT_API_KEY", ""),
         livekit_api_secret=os.getenv("LIVEKIT_API_SECRET", ""),
