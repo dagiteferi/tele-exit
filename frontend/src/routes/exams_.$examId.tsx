@@ -4,10 +4,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import {
   getExam,
+  getMyProfile,
   practiceChat,
+  saveAttemptProgress,
   startExamAttempt,
   startStudyCall,
   submitExamAttempt,
+  wrapUpSession,
   type ExamMode,
   type ExamQuestion,
 } from "@/lib/api";
@@ -119,6 +122,7 @@ function ExamSessionPage() {
   const [result, setResult] = useState<AttemptResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [booting, setBooting] = useState(true);
+  const [questionsVisited, setQuestionsVisited] = useState(1);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const streamGenRef = useRef(0);
 
@@ -134,10 +138,14 @@ function ExamSessionPage() {
       setChatOpen({});
       setResult(null);
       setError(null);
+      setQuestionsVisited(1);
       setBooting(false);
       void getExam(examId, mode as ExamMode)
         .then((detail) => setExamTitle(detail.exam.title || "this exam"))
         .catch(() => undefined);
+      if (mode === "practice" && data.questions[0]?.id) {
+        void saveAttemptProgress(data.attemptId, 0, data.questions[0].id).catch(() => undefined);
+      }
     },
     onError: (err: Error) => {
       setError(err.message);
@@ -149,6 +157,31 @@ function ExamSessionPage() {
     let cancelled = false;
 
     async function boot() {
+      let openProgress:
+        | {
+            attemptId: string;
+            progressIndex: number;
+            questionsVisited: number;
+            examTitle: string;
+          }
+        | null = null;
+      if (mode === "practice") {
+        try {
+          const profile = await getMyProfile();
+          const hit = profile.practiceProgress.find((p) => p.examId === examId);
+          if (hit) {
+            openProgress = {
+              attemptId: hit.attemptId,
+              progressIndex: hit.progressIndex,
+              questionsVisited: hit.questionsVisited,
+              examTitle: hit.examTitle,
+            };
+          }
+        } catch {
+          // offline / auth — fall through to local session
+        }
+      }
+
       const saved = loadSavedSession(examId, mode);
       if (saved && sessionLooksValid(saved)) {
         let questionsToUse = saved.questions;
@@ -174,15 +207,53 @@ function ExamSessionPage() {
           }
         }
         if (cancelled) return;
+        let resumeIndex = Math.min(saved.index || 0, questionsToUse.length - 1);
+        let visited = 1;
+        if (
+          openProgress &&
+          openProgress.attemptId === saved.attemptId &&
+          questionsToUse.length > 0
+        ) {
+          resumeIndex = Math.min(
+            Math.max(resumeIndex, openProgress.progressIndex),
+            questionsToUse.length - 1,
+          );
+          visited = Math.max(1, openProgress.questionsVisited);
+        }
         setAttemptId(saved.attemptId);
         setQuestions(questionsToUse);
-        setIndex(Math.min(saved.index || 0, questionsToUse.length - 1));
+        setIndex(resumeIndex);
         setAnswers(saved.answers || {});
         setRevealed(saved.revealed || {});
         setChatByQuestion(saved.chatByQuestion || {});
+        setQuestionsVisited(visited);
         setBooting(false);
         return;
       }
+
+      // No local session — resume open practice attempt from profile.
+      if (mode === "practice" && openProgress) {
+        try {
+          const detail = await getExam(examId, "practice");
+          if (cancelled) return;
+          const qs = detail.questions;
+          if (qs.length) {
+            setAttemptId(openProgress.attemptId);
+            setQuestions(qs);
+            setIndex(Math.min(openProgress.progressIndex, qs.length - 1));
+            setAnswers({});
+            setRevealed({});
+            setChatByQuestion({});
+            setQuestionsVisited(Math.max(1, openProgress.questionsVisited));
+            setExamTitle(detail.exam.title || openProgress.examTitle || "this exam");
+            setBooting(false);
+            return;
+          }
+        } catch {
+          // fall through to new attempt
+        }
+      }
+
       clearSession(examId, mode);
       if (!cancelled) start.mutate();
     }
@@ -207,6 +278,17 @@ function ExamSessionPage() {
     });
   }, [examId, mode, attemptId, questions, index, answers, revealed, chatByQuestion, result]);
 
+  // Persist stop point + visited count for profile / resume.
+  useEffect(() => {
+    if (!attemptId || !questions.length || result || mode !== "practice") return;
+    const q = questions[index];
+    const timer = window.setTimeout(() => {
+      void saveAttemptProgress(attemptId, index, q?.id)
+        .then((res) => setQuestionsVisited(res.questionsVisited))
+        .catch(() => undefined);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [attemptId, index, questions, result, mode]);
   const current = questions[index];
   const choices = useMemo(() => normalizeChoices(current), [current]);
   const chatLog = current ? chatByQuestion[current.id] || [] : [];
@@ -315,6 +397,30 @@ function ExamSessionPage() {
         percent: res.percent,
         results: res.results,
       });
+      if (mode === "practice") {
+        try {
+          const wrap = await wrapUpSession({
+            attemptId,
+            examId,
+            examTitle,
+            questionIds: questions.map((q) => q.id),
+            questionsVisited: Math.max(questionsVisited, questions.length),
+            persistEvents: false,
+            events: res.results.map((r) => ({
+              questionId: r.questionId,
+              topic: r.topic,
+              studentAnswerTranscript: r.yourAnswer,
+              wasCorrect: r.correct,
+              agentUsed: "curriculum" as const,
+            })),
+          });
+          sessionStorage.setItem("tele-exit-session-recap", JSON.stringify(wrap));
+          navigate({ to: "/session-recap" });
+          return;
+        } catch {
+          // keep results view even if wrap-up fails
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submit failed");
     }
@@ -430,6 +536,7 @@ function ExamSessionPage() {
         <div className="min-w-0">
           <p className="text-xs uppercase tracking-wider text-muted-foreground">
             {isPractice ? "Practice" : "Exam"} · {answeredCount}/{questions.length} answered
+            {isPractice ? ` · ${questionsVisited}/${questions.length} visited` : ""}
           </p>
           <h1 className="mt-1 truncate font-display text-2xl text-primary">{current.topic}</h1>
         </div>
@@ -822,6 +929,12 @@ function ResultsView({
 
       <div className="flex justify-center gap-3">
         <Link
+          to="/session-recap"
+          className="rounded-lg bg-primary px-4 py-2.5 text-sm text-primary-foreground"
+        >
+          Session recap & calendar
+        </Link>
+        <Link
           to="/exams"
           className="rounded-lg border border-input px-4 py-2.5 text-sm text-primary hover:bg-secondary"
         >
@@ -829,7 +942,7 @@ function ResultsView({
         </Link>
         <Link
           to="/dashboard"
-          className="rounded-lg bg-primary px-4 py-2.5 text-sm text-primary-foreground"
+          className="rounded-lg border border-input px-4 py-2.5 text-sm text-primary hover:bg-secondary"
         >
           Dashboard
         </Link>

@@ -15,6 +15,7 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
     # migrate before creating indexes that reference them.
     _migrate_exam_question_columns(connection)
     _migrate_exam_attempt_progress(connection)
+    _migrate_calendar_and_summaries(connection)
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_exam_questions_exam ON exam_questions(exam_id)"
     )
@@ -60,3 +61,29 @@ def _migrate_exam_attempt_progress(connection: sqlite3.Connection) -> None:
         connection.execute(
             "ALTER TABLE exam_attempts ADD COLUMN visited_json TEXT NOT NULL DEFAULT '[0]'"
         )
+
+
+def _migrate_calendar_and_summaries(connection: sqlite3.Connection) -> None:
+    cal_cols = _column_names(connection, "calendar_events")
+    if cal_cols and "status" not in cal_cols:
+        connection.execute(
+            "ALTER TABLE calendar_events ADD COLUMN status TEXT NOT NULL DEFAULT 'suggested'"
+        )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS session_summaries (
+            id TEXT PRIMARY KEY,
+            student_id TEXT NOT NULL,
+            attempt_id TEXT,
+            exam_id TEXT,
+            exam_title TEXT NOT NULL DEFAULT '',
+            questions_visited INTEGER NOT NULL DEFAULT 0,
+            questions_attempted INTEGER NOT NULL DEFAULT 0,
+            questions_correct INTEGER NOT NULL DEFAULT 0,
+            topics_json TEXT NOT NULL DEFAULT '[]',
+            summary_text TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (student_id) REFERENCES users(id)
+        )
+        """
+    )

@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SessionRecapRouteImport } from './routes/session-recap'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ProgressRouteImport } from './routes/progress'
 import { Route as LoginRouteImport } from './routes/login'
@@ -25,6 +26,11 @@ import { Route as AdminQuestionsRouteImport } from './routes/admin.questions'
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SessionRecapRoute = SessionRecapRouteImport.update({
+  id: '/session-recap',
+  path: '/session-recap',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RegisterRoute = RegisterRouteImport.update({
@@ -92,6 +98,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/progress': typeof ProgressRoute
   '/register': typeof RegisterRoute
+  '/session-recap': typeof SessionRecapRoute
   '/settings': typeof SettingsRoute
   '/admin/questions': typeof AdminQuestionsRoute
   '/admin/users': typeof AdminUsersRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/progress': typeof ProgressRoute
   '/register': typeof RegisterRoute
+  '/session-recap': typeof SessionRecapRoute
   '/settings': typeof SettingsRoute
   '/admin/questions': typeof AdminQuestionsRoute
   '/admin/users': typeof AdminUsersRoute
@@ -121,6 +129,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/progress': typeof ProgressRoute
   '/register': typeof RegisterRoute
+  '/session-recap': typeof SessionRecapRoute
   '/settings': typeof SettingsRoute
   '/admin/questions': typeof AdminQuestionsRoute
   '/admin/users': typeof AdminUsersRoute
@@ -137,6 +146,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/progress'
     | '/register'
+    | '/session-recap'
     | '/settings'
     | '/admin/questions'
     | '/admin/users'
@@ -151,6 +161,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/progress'
     | '/register'
+    | '/session-recap'
     | '/settings'
     | '/admin/questions'
     | '/admin/users'
@@ -165,6 +176,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/progress'
     | '/register'
+    | '/session-recap'
     | '/settings'
     | '/admin/questions'
     | '/admin/users'
@@ -180,6 +192,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ProgressRoute: typeof ProgressRoute
   RegisterRoute: typeof RegisterRoute
+  SessionRecapRoute: typeof SessionRecapRoute
   SettingsRoute: typeof SettingsRoute
   AdminQuestionsRoute: typeof AdminQuestionsRoute
   AdminUsersRoute: typeof AdminUsersRoute
@@ -193,6 +206,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/session-recap': {
+      id: '/session-recap'
+      path: '/session-recap'
+      fullPath: '/session-recap'
+      preLoaderRoute: typeof SessionRecapRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/register': {
@@ -284,6 +304,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ProgressRoute: ProgressRoute,
   RegisterRoute: RegisterRoute,
+  SessionRecapRoute: SessionRecapRoute,
   SettingsRoute: SettingsRoute,
   AdminQuestionsRoute: AdminQuestionsRoute,
   AdminUsersRoute: AdminUsersRoute,

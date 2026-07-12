@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getExam, getMyProfile, practiceChat } from "@/lib/api";
+import { getExam, getMyProfile, practiceChat, saveAttemptProgress, wrapUpSession } from "@/lib/api";
 import {
   buildCallOpening,
   buildJoiningLine,
@@ -99,6 +99,24 @@ function buildDeckFromHandoff(handoff: PracticeCallHandoff | null): QuestionCard
       choices: [],
     },
   ];
+}
+
+function patchPracticeSessionIndex(
+  examId: string,
+  attemptId: string,
+  index: number,
+) {
+  const key = `tele-exit-session:v4:${examId}:practice`;
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as { attemptId?: string; index?: number };
+    if (parsed.attemptId && attemptId && parsed.attemptId !== attemptId) return;
+    parsed.index = index;
+    sessionStorage.setItem(key, JSON.stringify(parsed));
+  } catch {
+    // ignore
+  }
 }
 
 function CallScreen() {
@@ -226,6 +244,7 @@ function CallScreen() {
   const queueUserSpeechRef = useRef<(chunk: string) => void>(() => undefined);
   /** Student just got the current question right — “yes / move on” advances. */
   const lastCorrectRef = useRef(false);
+  const visitedIdsRef = useRef<Set<string>>(new Set());
 
   const pushTurn = useCallback((who: "agent" | "you", text: string, forQuestionId?: string) => {
     const key = forQuestionId || questionIdRef.current || "q0";
@@ -251,6 +270,7 @@ function CallScreen() {
       if (nextCursor === cursorRef.current) return false;
       const q = list[nextCursor];
       const qid = q.id || `idx-${nextCursor}`;
+      if (q.id) visitedIdsRef.current.add(q.id);
       const speak = opts?.speak !== false;
       questionIdRef.current = qid;
       cursorRef.current = nextCursor;
@@ -297,9 +317,17 @@ function CallScreen() {
       } else {
         setSpeaking(false);
       }
+
+      // Remember stop point for resume + profile progress.
+      if (attemptId) {
+        void saveAttemptProgress(attemptId, nextCursor, q.id).catch(() => undefined);
+      }
+      if (examId) {
+        patchPracticeSessionIndex(examId, attemptId, nextCursor);
+      }
       return true;
     },
-    [],
+    [attemptId, examId],
   );
   goToQuestionRef.current = goToQuestion;
 
@@ -481,6 +509,15 @@ function CallScreen() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // Seed resume bookmark for the question you opened the call on.
+  useEffect(() => {
+    if (!attemptId || !question) return;
+    if (question.id) visitedIdsRef.current.add(question.id);
+    void saveAttemptProgress(attemptId, cursorRef.current, question.id).catch(() => undefined);
+    if (examId) patchPracticeSessionIndex(examId, attemptId, cursorRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attemptId]);
 
   useEffect(() => {
     warmVoices();
@@ -730,18 +767,40 @@ function CallScreen() {
     stopListening();
     cancelSpeakRef.current?.();
     window.speechSynthesis?.cancel();
+    const stopAt = cursorRef.current;
+    const q = deckRef.current[stopAt];
+    if (q?.id) visitedIdsRef.current.add(q.id);
+    if (attemptId) {
+      try {
+        await saveAttemptProgress(attemptId, stopAt, q?.id);
+      } catch {
+        // still leave the call
+      }
+    }
+    if (examId) {
+      patchPracticeSessionIndex(examId, attemptId, stopAt);
+    }
+
+    const questionIds = [...visitedIdsRef.current];
+    try {
+      if (attemptId) {
+        const wrap = await wrapUpSession({
+          attemptId,
+          examId: examId || undefined,
+          examTitle,
+          questionIds,
+          questionsVisited: Math.max(questionIds.length, 1),
+        });
+        sessionStorage.setItem("tele-exit-session-recap", JSON.stringify(wrap));
+      }
+    } catch {
+      // still leave even if wrap-up fails
+    }
+
     sessionStorage.removeItem(SPEECH_STARTED_KEY);
     stopCamera();
     sessionStorage.removeItem(CALL_HANDOFF_KEY);
-    if (handoff?.examId) {
-      navigate({
-        to: "/exams/$examId",
-        params: { examId: handoff.examId },
-        search: { mode: "practice" },
-      });
-      return;
-    }
-    navigate({ to: "/dashboard" });
+    navigate({ to: "/session-recap" });
   }
 
   const readiness = profile.data?.readiness ?? 0;

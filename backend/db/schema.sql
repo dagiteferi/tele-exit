@@ -48,6 +48,22 @@ CREATE TABLE IF NOT EXISTS calendar_events (
     start_iso TEXT NOT NULL,
     duration_minutes INTEGER NOT NULL,
     external_event_id TEXT,
+    status TEXT NOT NULL DEFAULT 'suggested',
+    FOREIGN KEY (student_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS session_summaries (
+    id TEXT PRIMARY KEY,
+    student_id TEXT NOT NULL,
+    attempt_id TEXT,
+    exam_id TEXT,
+    exam_title TEXT NOT NULL DEFAULT '',
+    questions_visited INTEGER NOT NULL DEFAULT 0,
+    questions_attempted INTEGER NOT NULL DEFAULT 0,
+    questions_correct INTEGER NOT NULL DEFAULT 0,
+    topics_json TEXT NOT NULL DEFAULT '[]',
+    summary_text TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (student_id) REFERENCES users(id)
 );
 

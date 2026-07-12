@@ -13,6 +13,8 @@ from app.core.di import (
 from app.domain.practice_coach import coach_reply, grounded_reply
 from app.domain.voice_call import voice_call_turn
 from app.schemas import (
+    AttemptProgressRequest,
+    AttemptProgressResponse,
     ExamDetailOut,
     ExamOut,
     ExamQuestionOut,
@@ -158,6 +160,47 @@ async def start_attempt(
         exam_id=exam_id,
         mode=body.mode,
         questions=[_question_out(q, include_answer=include_answer) for q in questions],
+    )
+
+
+@router.patch("/attempts/{attempt_id}/progress", response_model=AttemptProgressResponse)
+async def update_attempt_progress(
+    attempt_id: str,
+    body: AttemptProgressRequest,
+    student_id: str = Depends(get_current_student_id),
+    container: AppContainer = Depends(get_container),
+):
+    attempt = await container.repo.get_exam_attempt(attempt_id)
+    if attempt is None or attempt["student_id"] != student_id:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    if attempt.get("completed_at"):
+        raise HTTPException(status_code=400, detail="Attempt already submitted")
+
+    questions = await container.repo.list_exam_questions(attempt["exam_id"])
+    total = len(questions)
+    if total == 0:
+        raise HTTPException(status_code=400, detail="Exam has no questions")
+    if body.question_index >= total:
+        raise HTTPException(status_code=400, detail="question_index out of range")
+
+    qid = body.question_id
+    if not qid and 0 <= body.question_index < total:
+        qid = questions[body.question_index].get("id")
+
+    updated = await container.repo.update_attempt_progress(
+        attempt_id,
+        progress_index=body.question_index,
+        question_id=qid,
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+
+    return AttemptProgressResponse(
+        attempt_id=attempt_id,
+        progress_index=int(updated["progress_index"]),
+        question_number=int(updated["progress_index"]) + 1,
+        questions_visited=int(updated["questions_visited"]),
+        question_total=total,
     )
 
 
