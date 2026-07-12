@@ -23,4 +23,28 @@ class FakeLLM(LLMPort):
             return "youtube"
         if any(word in lowered for word in ("search", "google", "web", "online")):
             return "search"
+        if any(
+            phrase in lowered
+            for phrase in (
+                "how am i doing",
+                "my progress",
+                "weak topics",
+                "readiness",
+                "my status",
+            )
+        ):
+            return "memory"
+        if any(
+            phrase in lowered
+            for phrase in (
+                "schedule",
+                "calendar",
+                "plan my",
+                "plan a study",
+                "remind me",
+                "book a session",
+                "next session",
+            )
+        ):
+            return "planner"
         return self.intent

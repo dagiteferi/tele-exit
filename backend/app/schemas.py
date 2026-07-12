@@ -348,11 +348,18 @@ class PracticeChatVideo(BaseModel):
     description: str = ""
 
 
+class PracticeChatSession(BaseModel):
+    topic: str = ""
+    start_iso: str = ""
+    duration_minutes: int = 30
+
+
 class PracticeChatResponse(BaseModel):
     reply: str
     agent_used: str | None = None
     action: str | None = None
     video: PracticeChatVideo | None = None
+    scheduled: list[PracticeChatSession] = Field(default_factory=list)
 
 
 class StudyCallResponse(BaseModel):

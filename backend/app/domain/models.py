@@ -45,6 +45,8 @@ class Intent(str, Enum):
     CURRICULUM = "curriculum"
     SEARCH = "search"
     YOUTUBE = "youtube"
+    MEMORY = "memory"
+    PLANNER = "planner"
 
 
 class OutboxStatus(str, Enum):

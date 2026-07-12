@@ -858,6 +858,47 @@ export async function startExamAttempt(
   };
 }
 
+/** True when the attempt exists and belongs to the current student. */
+export async function isAttemptAlive(
+  attemptId: string,
+  questionIndex = 0,
+  questionId?: string | null,
+): Promise<boolean> {
+  if (!attemptId) return false;
+  try {
+    await saveAttemptProgress(attemptId, questionIndex, questionId);
+    return true;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return false;
+    // Network / auth glitches — don't force a new attempt.
+    return true;
+  }
+}
+
+/**
+ * Reuse a practice attempt when it still belongs to you; otherwise start a fresh one.
+ * Fixes stale sessionStorage IDs after DB reset or account switch.
+ */
+export async function ensurePracticeAttempt(
+  examId: string,
+  preferredAttemptId?: string | null,
+  opts?: { questionIndex?: number; questionId?: string | null },
+): Promise<{ attemptId: string; questions: ExamQuestion[]; reused: boolean }> {
+  const index = opts?.questionIndex ?? 0;
+  if (preferredAttemptId) {
+    const alive = await isAttemptAlive(preferredAttemptId, index, opts?.questionId);
+    if (alive) {
+      return { attemptId: preferredAttemptId, questions: [], reused: true };
+    }
+  }
+  const created = await startExamAttempt(examId, "practice");
+  return {
+    attemptId: created.attemptId,
+    questions: created.questions,
+    reused: false,
+  };
+}
+
 export async function submitExamAttempt(
   attemptId: string,
   answers: { questionId: string; answer: string }[],
@@ -920,6 +961,7 @@ export async function practiceChat(
   agentUsed?: string | null;
   action?: string | null;
   video?: { title: string; url: string; timestamp?: string; description?: string } | null;
+  scheduled?: { topic: string; startIso: string; durationMinutes: number }[];
 }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts?.timeoutMs ?? 35_000);
@@ -934,6 +976,11 @@ export async function practiceChat(
         timestamp?: string;
         description?: string;
       } | null;
+      scheduled?: {
+        topic?: string;
+        start_iso?: string;
+        duration_minutes?: number;
+      }[];
     }>(`/exams/attempts/${attemptId}/chat`, {
       method: "POST",
       body: JSON.stringify({
@@ -955,6 +1002,11 @@ export async function practiceChat(
             description: data.video.description || "",
           }
         : null,
+      scheduled: (data.scheduled || []).map((s) => ({
+        topic: s.topic || "",
+        startIso: s.start_iso || "",
+        durationMinutes: s.duration_minutes || 30,
+      })),
     };
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
