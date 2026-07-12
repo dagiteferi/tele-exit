@@ -54,9 +54,12 @@ function ProgressPage() {
     mutationFn: () => sendProgressReport(),
     onSuccess: (res) => {
       setReportNote(
-        res.emailTo
+        res.emailSent
           ? `Report sent to ${res.emailTo}.`
-          : "Report queued — confirm your email in Settings.",
+          : res.deliveryDetail ||
+              (res.emailTo
+                ? `Report ready for ${res.emailTo}, but email was not delivered (Gmail not connected).`
+                : "Report preview ready — email delivery is not connected."),
       );
       void qc.invalidateQueries({ queryKey: ["calendar"] });
       void qc.invalidateQueries({ queryKey: ["profile"] });

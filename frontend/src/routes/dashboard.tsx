@@ -341,7 +341,7 @@ function Dashboard() {
                     <p className="truncate text-sm text-primary">{e.topic}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {formatDay(e.scheduledAt)} · {e.durationMinutes} min
-                      {e.status === "accepted" ? " · on calendar" : " · suggested"}
+                      {e.status === "accepted" ? " · accepted" : " · suggested"}
                     </p>
                   </div>
                   <Link

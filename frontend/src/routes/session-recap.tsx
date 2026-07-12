@@ -49,6 +49,11 @@ function SessionRecapPage() {
     mutationFn: (id: string) => acceptCalendarSuggestion(id),
     onSuccess: (event) => {
       setAccepted((prev) => ({ ...prev, [event.id]: true }));
+      setReportNote(
+        event.deliveryMode === "live"
+          ? `Added “${event.topic}” to Google Calendar.`
+          : `Accepted “${event.topic}” in Tele-Exit only. ${event.deliveryDetail || "Google Calendar is not connected yet."}`,
+      );
       void qc.invalidateQueries({ queryKey: ["calendar"] });
       void qc.invalidateQueries({ queryKey: ["profile"] });
     },
@@ -58,9 +63,12 @@ function SessionRecapPage() {
     mutationFn: () => sendProgressReport(),
     onSuccess: (res) => {
       setReportNote(
-        res.emailTo
+        res.emailSent
           ? `Report sent to ${res.emailTo}.`
-          : "Report queued — check your account email in Settings.",
+          : res.deliveryDetail ||
+              (res.emailTo
+                ? `Report ready for ${res.emailTo}, but email was not delivered (Gmail not connected).`
+                : "Report preview ready — email delivery is not connected."),
       );
       void qc.invalidateQueries({ queryKey: ["calendar"] });
       void qc.invalidateQueries({ queryKey: ["profile"] });
@@ -123,7 +131,8 @@ function SessionRecapPage() {
       <section>
         <h2 className="font-display text-xl text-primary">AI calendar recommendations</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Based on what you practiced and your weaker topics. Accept to add to Google Calendar.
+          Based on what you practiced and your weaker topics. Accept to save them in Tele-Exit —
+          and on Google Calendar when connected.
         </p>
         {recap.recommendations.length === 0 ? (
           <p className="mt-4 text-sm text-muted-foreground">No suggestions this time.</p>
@@ -158,7 +167,7 @@ function SessionRecapPage() {
                     onClick={() => accept.mutate(r.id)}
                     className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50"
                   >
-                    {done ? "Added to calendar" : "Accept → Google Calendar"}
+                    {done ? "Accepted" : "Accept"}
                   </button>
                 </li>
               );

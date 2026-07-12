@@ -437,9 +437,18 @@ export async function wrapUpSession(input: {
   };
 }
 
-export async function acceptCalendarSuggestion(eventId: string): Promise<CalendarRecommendation> {
+export async function acceptCalendarSuggestion(eventId: string): Promise<
+  CalendarRecommendation & {
+    deliveryMode: "live" | "stub";
+    deliveryDetail: string;
+    htmlLink?: string | null;
+  }
+> {
   const data = await apiFetch<{
     status: string;
+    delivery_mode?: "live" | "stub";
+    delivery_detail?: string;
+    html_link?: string | null;
     event: {
       id: string;
       topic: string;
@@ -456,6 +465,9 @@ export async function acceptCalendarSuggestion(eventId: string): Promise<Calenda
     durationMinutes: data.event.duration_minutes,
     status: data.event.status || "accepted",
     externalEventId: data.event.external_event_id,
+    deliveryMode: data.delivery_mode === "live" ? "live" : "stub",
+    deliveryDetail: data.delivery_detail || "",
+    htmlLink: data.html_link,
   };
 }
 
@@ -463,6 +475,9 @@ export async function sendProgressReport(): Promise<{
   emailTo?: string | null;
   reportPreview: string;
   calendarSuggestions: number;
+  deliveryMode: "live" | "stub";
+  deliveryDetail: string;
+  emailSent: boolean;
 }> {
   const data = await apiFetch<{
     status: string;
@@ -470,11 +485,17 @@ export async function sendProgressReport(): Promise<{
     email_to?: string | null;
     report_preview?: string;
     calendar_suggestions?: number;
+    delivery_mode?: "live" | "stub";
+    delivery_detail?: string;
+    email_sent?: boolean;
   }>("/students/me/report", { method: "POST" });
   return {
     emailTo: data.email_to,
     reportPreview: data.report_preview || "",
     calendarSuggestions: data.calendar_suggestions || 0,
+    deliveryMode: data.delivery_mode === "live" ? "live" : "stub",
+    deliveryDetail: data.delivery_detail || "",
+    emailSent: !!data.email_sent,
   };
 }
 export async function updateSettings(input: { reportFrequency: "weekly" | "monthly" }) {

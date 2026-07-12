@@ -159,11 +159,15 @@ async def accept_calendar_event(
     if match is None:
         raise HTTPException(status_code=404, detail="Calendar suggestion not found")
 
+    profile = await container.repo.get_profile(student_id)
+    attendee = str((profile or {}).get("email") or "") or None
+
     external_id = await container.calendar.create_study_event(
         student_id=student_id,
         topic=str(match["topic"]),
         start_iso=str(match["start_iso"]),
         duration_minutes=int(match["duration_minutes"]),
+        attendee_email=attendee,
     )
     updated = await container.repo.accept_calendar_event(
         student_id,
@@ -173,6 +177,71 @@ async def accept_calendar_event(
     if updated is None:
         raise HTTPException(status_code=404, detail="Calendar suggestion not found")
 
+    cal_delivery = getattr(container.calendar, "last_delivery", None) or {}
+    cal_mode = str(cal_delivery.get("mode") or "stub")
+    details: list[str] = []
+    if cal_delivery.get("detail"):
+        details.append(str(cal_delivery["detail"]))
+    html_link = cal_delivery.get("html_link")
+
+    # Demo path: email a real .ics invite so it appears in Google Calendar
+    # even when the Calendar API is not enabled yet.
+    email_mode = "stub"
+    if attendee and "@" in attendee:
+        from app.domain.ics_invite import build_study_ics
+
+        organizer = (
+            container.settings.smtp_from
+            or container.settings.smtp_user
+            or container.settings.google_delegated_user
+            or "noreply@tele-exit.local"
+        )
+        ics = build_study_ics(
+            topic=str(match["topic"]),
+            start_iso=str(match["start_iso"]),
+            duration_minutes=int(match["duration_minutes"]),
+            attendee_email=attendee,
+            organizer_email=organizer,
+        )
+        when = str(match["start_iso"])
+        body = (
+            f"<p>Hi,</p>"
+            f"<p>Your Tele-Exit practice session was accepted:</p>"
+            f"<p><strong>{match['topic']}</strong><br>"
+            f"{when} · {match['duration_minutes']} minutes</p>"
+            f"<p>Open the attached <code>.ics</code> file (or tap Add to Calendar in Gmail) "
+            f"to put this on your Google Calendar.</p>"
+            f"<p>— Tele-Exit</p>"
+        )
+        try:
+            await container.email.send(
+                attendee,
+                f"Tele-Exit practice invite: {match['topic']}",
+                body,
+                ics_content=ics,
+            )
+            email_delivery = getattr(container.email, "last_delivery", None) or {}
+            email_mode = str(email_delivery.get("mode") or "stub")
+            if email_delivery.get("detail"):
+                details.append(str(email_delivery["detail"]))
+        except Exception as exc:  # noqa: BLE001
+            details.append(f"Invite email failed ({exc}).")
+
+    live = cal_mode == "live" or email_mode == "live"
+    if live and email_mode == "live" and cal_mode != "live":
+        summary = (
+            f"Calendar invite emailed to {attendee}. "
+            "Open it in Gmail and choose Add to Calendar."
+        )
+    elif live and cal_mode == "live":
+        summary = "Added to Google Calendar."
+        if email_mode == "live":
+            summary += f" Invite also emailed to {attendee}."
+    else:
+        summary = " ".join(details) or (
+            "Accepted in Tele-Exit only. Configure SMTP_USER/SMTP_PASSWORD for real invite email."
+        )
+
     return AcceptCalendarResponse(
         event=CalendarRecommendationOut(
             id=str(updated["id"]),
@@ -181,7 +250,10 @@ async def accept_calendar_event(
             duration_minutes=int(updated["duration_minutes"]),
             status=str(updated.get("status") or "accepted"),
             external_event_id=updated.get("external_event_id"),
-        )
+        ),
+        delivery_mode="live" if live else "stub",
+        delivery_detail=summary,
+        html_link=str(html_link) if html_link else None,
     )
 
 

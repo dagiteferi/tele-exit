@@ -52,13 +52,25 @@ function CalendarPage() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["calendar"], queryFn: getMyCalendar });
   const [note, setNote] = useState<string | null>(null);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [accepted, setAccepted] = useState<Record<string, boolean>>({});
 
   const accept = useMutation({
     mutationFn: (id: string) => acceptCalendarSuggestion(id),
     onSuccess: (event) => {
       setAccepted((prev) => ({ ...prev, [event.id]: true }));
-      setNote(`Added “${event.topic}” to Google Calendar.`);
+      if (event.deliveryMode === "live") {
+        setNote(
+          event.deliveryDetail ||
+            (event.htmlLink
+              ? `Added “${event.topic}” to Google Calendar.`
+              : `Invite for “${event.topic}” emailed — open it and tap Add to Calendar.`),
+        );
+      } else {
+        setNote(
+          `Accepted “${event.topic}” in Tele-Exit only. ${event.deliveryDetail || "Set SMTP_USER / SMTP_PASSWORD in backend/.env for real email."}`,
+        );
+      }
       void qc.invalidateQueries({ queryKey: ["calendar"] });
     },
     onError: (err: Error) => setNote(err.message),
@@ -67,11 +79,17 @@ function CalendarPage() {
   const report = useMutation({
     mutationFn: () => sendProgressReport(),
     onSuccess: (res) => {
-      setNote(
-        res.emailTo
-          ? `Progress report emailed to ${res.emailTo}.`
-          : "Progress report queued.",
-      );
+      setPreviewHtml(res.reportPreview || null);
+      if (res.emailSent) {
+        setNote(`Progress report emailed to ${res.emailTo}.`);
+      } else {
+        setNote(
+          res.deliveryDetail ||
+            (res.emailTo
+              ? `Report ready for ${res.emailTo}, but email was not delivered (Gmail not connected). Preview below.`
+              : "Report preview ready. Email delivery is not connected."),
+        );
+      }
       void qc.invalidateQueries({ queryKey: ["calendar"] });
     },
     onError: (err: Error) => setNote(err.message),
@@ -106,7 +124,8 @@ function CalendarPage() {
           <p className="eyebrow">Calendar</p>
           <h1 className="mt-2 font-display text-3xl text-primary">Upcoming practice sessions</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            AI suggestions from your study sessions. Accept one to put it on Google Calendar.
+            AI suggestions from your study sessions. Accept to save them in Tele-Exit — and on Google
+            Calendar when Google is connected.
           </p>
         </div>
         <button
@@ -115,10 +134,36 @@ function CalendarPage() {
           onClick={() => report.mutate()}
           className="rounded-lg border border-input px-4 py-2 text-sm text-primary hover:bg-secondary disabled:opacity-50"
         >
-          {report.isPending ? "Sending…" : "Send my report"}
+          {report.isPending ? "Preparing…" : "Send my report"}
         </button>
       </header>
-      {note && <p className="text-sm text-muted-foreground">{note}</p>}
+      {note && (
+        <p
+          role="status"
+          className="rounded-md border border-hairline bg-[var(--surface)] px-3 py-2 text-sm text-muted-foreground"
+        >
+          {note}
+        </p>
+      )}
+
+      {previewHtml && (
+        <section className="rounded-xl border border-hairline bg-card p-4 md:p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-display text-lg text-primary">Report preview</h2>
+            <button
+              type="button"
+              className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+              onClick={() => setPreviewHtml(null)}
+            >
+              Hide
+            </button>
+          </div>
+          <div
+            className="prose prose-sm max-h-[420px] max-w-none overflow-auto rounded-lg border border-hairline bg-background p-4 text-foreground"
+            dangerouslySetInnerHTML={{ __html: previewHtml }}
+          />
+        </section>
+      )}
 
       {groups.length === 0 ? (
         <p className="text-sm text-muted-foreground">
@@ -149,7 +194,7 @@ function CalendarPage() {
                       </div>
                       {done ? (
                         <span className="rounded-full border border-hairline px-3 py-1 text-xs text-muted-foreground">
-                          On calendar
+                          Accepted
                         </span>
                       ) : (
                         <button
@@ -158,7 +203,7 @@ function CalendarPage() {
                           onClick={() => accept.mutate(e.id)}
                           className="rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground disabled:opacity-50"
                         >
-                          Accept → Google Calendar
+                          Accept
                         </button>
                       )}
                     </li>

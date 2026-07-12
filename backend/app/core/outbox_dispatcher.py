@@ -20,6 +20,7 @@ async def dispatch_pending_outbox_records(
                     topic=payload["topic"],
                     start_iso=payload["start_iso"],
                     duration_minutes=int(payload["duration_minutes"]),
+                    attendee_email=payload.get("attendee_email") or payload.get("email"),
                 )
             await repo.mark_outbox_sent(record["id"])
             sent += 1
