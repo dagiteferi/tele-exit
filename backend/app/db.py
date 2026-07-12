@@ -14,6 +14,7 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
     # Existing DBs already have exam_questions without newer columns —
     # migrate before creating indexes that reference them.
     _migrate_exam_question_columns(connection)
+    _migrate_exam_attempt_progress(connection)
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_exam_questions_exam ON exam_questions(exam_id)"
     )
@@ -41,3 +42,21 @@ def _migrate_exam_question_columns(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE exam_questions ADD COLUMN choices_json TEXT")
     if "explanation" not in cols:
         connection.execute("ALTER TABLE exam_questions ADD COLUMN explanation TEXT")
+
+
+def _migrate_exam_attempt_progress(connection: sqlite3.Connection) -> None:
+    cols = _column_names(connection, "exam_attempts")
+    if not cols:
+        return
+    if "progress_index" not in cols:
+        connection.execute(
+            "ALTER TABLE exam_attempts ADD COLUMN progress_index INTEGER NOT NULL DEFAULT 0"
+        )
+    if "questions_visited" not in cols:
+        connection.execute(
+            "ALTER TABLE exam_attempts ADD COLUMN questions_visited INTEGER NOT NULL DEFAULT 1"
+        )
+    if "visited_json" not in cols:
+        connection.execute(
+            "ALTER TABLE exam_attempts ADD COLUMN visited_json TEXT NOT NULL DEFAULT '[0]'"
+        )
