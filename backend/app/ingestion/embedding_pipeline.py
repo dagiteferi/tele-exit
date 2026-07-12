@@ -29,6 +29,16 @@ def _pick(raw: dict, *keys: str) -> Any:
 def _normalize_choices(raw: Any) -> list[str] | None:
     if raw is None or raw == "":
         return None
+    # MCQ map: { "A": "...", "B": "..." } → ["A. ...", "B. ..."]
+    if isinstance(raw, dict):
+        items: list[str] = []
+        for key in sorted(raw.keys(), key=lambda k: str(k)):
+            label = str(key).strip()
+            text = str(raw[key]).strip()
+            if not text:
+                continue
+            items.append(f"{label}. {text}" if label else text)
+        return items or None
     if isinstance(raw, list):
         return [str(item).strip() for item in raw if str(item).strip()]
     if isinstance(raw, str):
@@ -40,12 +50,30 @@ def _normalize_choices(raw: Any) -> list[str] | None:
                 parsed = json.loads(text)
                 if isinstance(parsed, list):
                     return [str(item).strip() for item in parsed if str(item).strip()]
+                if isinstance(parsed, dict):
+                    return _normalize_choices(parsed)
             except json.JSONDecodeError:
                 pass
-        # pipe or semicolon separated
         parts = [p.strip() for p in text.replace(";", "|").split("|") if p.strip()]
         return parts or None
     return None
+
+
+def _resolve_answer(raw: dict, choices: list[str] | None) -> Any:
+    answer = _pick(raw, "reference_answer", "answer", "correct_answer", "solution")
+    if answer is None:
+        return None
+    answer_str = str(answer).strip()
+    options = raw.get("options")
+    # Expand letter key (e.g. "C") using options map when present
+    if isinstance(options, dict) and answer_str in options:
+        return f"{answer_str}. {options[answer_str]}".strip()
+    if choices and len(answer_str) <= 2:
+        letter = answer_str.rstrip(").").upper()
+        for choice in choices:
+            if choice.upper().startswith(f"{letter}.") or choice.upper().startswith(f"{letter})"):
+                return choice
+    return answer_str
 
 
 def _validate_raw_question(
@@ -55,31 +83,33 @@ def _validate_raw_question(
     default_year: int | None = None,
     field_of_study: str | None = None,
 ) -> dict:
-    topic = _pick(raw, "topic", "subject", "chapter")
+    topic = _pick(raw, "topic", "subject", "chapter", "course_name")
     question_text = _pick(raw, "question_text", "question", "prompt", "text")
-    reference_answer = _pick(raw, "reference_answer", "answer", "correct_answer", "solution")
     year_raw = _pick(raw, "year")
     if year_raw is None:
         year_raw = default_year
 
+    choices = _normalize_choices(_pick(raw, "choices", "options"))
+    reference_answer = _resolve_answer(raw, choices)
+
     missing = []
     if not topic:
-        missing.append("topic")
+        missing.append("topic|course_name")
     if not question_text:
         missing.append("question_text|question")
     if not reference_answer:
-        missing.append("reference_answer|answer")
+        missing.append("correct_answer|answer")
     if year_raw is None:
         missing.append("year")
     if missing:
         raise ValueError(f"row {index}: missing required fields: {', '.join(missing)}")
 
     try:
-        year = int(year_raw)
+        # Accept Ethiopian years / numeric strings like "2015"
+        year = int(str(year_raw).strip().split(".")[0])
     except (TypeError, ValueError) as exc:
         raise ValueError(f"row {index}: year must be an integer") from exc
 
-    choices = _normalize_choices(_pick(raw, "choices", "options"))
     return {
         "topic": str(topic).strip(),
         "year": year,

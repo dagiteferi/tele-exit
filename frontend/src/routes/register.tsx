@@ -7,6 +7,7 @@ import {
   AuthLayout,
   AuthSwitchLink,
   Field,
+  PasswordInput,
   authInputClass,
 } from "@/components/AuthLayout";
 
@@ -186,14 +187,12 @@ function RegisterPage() {
               error={errors.password}
               hint="At least 8 characters."
             >
-              <input
+              <PasswordInput
                 id="password"
-                type="password"
                 autoComplete="new-password"
                 value={values.password}
                 aria-invalid={Boolean(errors.password)}
                 onChange={(e) => patch({ password: e.target.value })}
-                className={authInputClass}
               />
             </Field>
           </>
