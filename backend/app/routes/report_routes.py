@@ -29,9 +29,22 @@ async def trigger_report(
         container.calendar,
     )
     weak = list((profile or {}).get("weak_topics") or [])
+    delivery = getattr(container.email, "last_delivery", None) or {}
+    mode = str(delivery.get("mode") or "stub")
+    detail = str(
+        delivery.get("detail")
+        or (
+            "Report generated. Email delivery is not connected — open the preview below."
+            if email_to
+            else "Report generated. Add an email on your account to enable delivery."
+        )
+    )
     return ReportTriggerResponse(
         student_id=student_id,
         email_to=email_to or None,
         report_preview=preview or "",
         calendar_suggestions=min(3, len(weak)),
+        delivery_mode="live" if mode == "live" else "stub",
+        delivery_detail=detail,
+        email_sent=mode == "live",
     )

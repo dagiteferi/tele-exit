@@ -53,6 +53,8 @@ client_secret*.json
 *.sqlite
 *.sqlite3
 tele_exit.db
+var/
+backend/var/
 
 # IDE / OS
 .vscode/

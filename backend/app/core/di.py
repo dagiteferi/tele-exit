@@ -17,6 +17,7 @@ from app.adapters.real.gemini_llm_adapter import GeminiLLMAdapter
 from app.adapters.real.gmail_email_adapter import GmailEmailAdapter
 from app.adapters.real.google_calendar_adapter import GoogleCalendarAdapter
 from app.adapters.real.livekit_adapter import LiveKitAdapter
+from app.adapters.real.smtp_email_adapter import SmtpEmailAdapter
 from app.adapters.real.sqlite_repository_adapter import SQLiteRepositoryAdapter
 from app.adapters.real.tavily_search_adapter import TavilySearchAdapter
 from app.adapters.real.vector_store_adapter import LocalVectorStoreAdapter
@@ -62,6 +63,23 @@ class AppContainer:
 _container: AppContainer | None = None
 
 
+def _build_email(settings: Settings) -> EmailPort:
+    """Prefer SMTP (best for demos), then Workspace Gmail, else stub Gmail adapter."""
+    if settings.smtp_user.strip() and settings.smtp_password.strip():
+        return SmtpEmailAdapter(
+            host=settings.smtp_host,
+            port=settings.smtp_port,
+            username=settings.smtp_user.strip(),
+            password=settings.smtp_password,
+            from_email=(settings.smtp_from or settings.smtp_user).strip(),
+            use_tls=settings.smtp_use_tls,
+        )
+    return GmailEmailAdapter(
+        credentials_path=settings.google_credentials_path,
+        delegated_user=settings.google_delegated_user,
+    )
+
+
 def build_container(settings: Settings | None = None) -> AppContainer:
     settings = settings or get_settings()
 
@@ -70,8 +88,17 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         search: WebSearchPort = FakeSearch()
         video_search: VideoSearchPort = FakeVideoSearch()
         embedding: EmbeddingPort = FakeEmbedding()
-        calendar: CalendarPort = FakeCalendar()
-        email: EmailPort = FakeEmail()
+        # Still allow real SMTP in "fakes" mode when configured — useful for demos.
+        if settings.smtp_user.strip() and settings.smtp_password.strip():
+            calendar: CalendarPort = GoogleCalendarAdapter(
+                credentials_path=settings.google_credentials_path,
+                calendar_id=settings.google_calendar_id,
+                delegated_user=settings.google_delegated_user,
+            )
+            email: EmailPort = _build_email(settings)
+        else:
+            calendar = FakeCalendar()
+            email = FakeEmail()
         video_session: VideoSessionPort = FakeVideoSession()
     else:
         llm = GeminiLLMAdapter(api_key=settings.gemini_api_key)
@@ -79,9 +106,11 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         video_search = YouTubeAdapter(api_key=settings.youtube_api_key)
         embedding = GeminiEmbeddingAdapter(api_key=settings.gemini_api_key)
         calendar = GoogleCalendarAdapter(
-            credentials_path=settings.google_credentials_path
+            credentials_path=settings.google_credentials_path,
+            calendar_id=settings.google_calendar_id,
+            delegated_user=settings.google_delegated_user,
         )
-        email = GmailEmailAdapter(credentials_path=settings.google_credentials_path)
+        email = _build_email(settings)
         video_session = LiveKitAdapter(
             url=settings.livekit_url,
             api_key=settings.livekit_api_key,

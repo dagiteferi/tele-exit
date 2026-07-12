@@ -150,6 +150,9 @@ class ReportTriggerResponse(BaseModel):
     email_to: Optional[str] = None
     report_preview: str = ""
     calendar_suggestions: int = 0
+    delivery_mode: Literal["live", "stub"] = "stub"
+    delivery_detail: str = ""
+    email_sent: bool = False
 
 
 class SessionWrapUpEventIn(BaseModel):
@@ -203,6 +206,9 @@ class SessionWrapUpResponse(BaseModel):
 class AcceptCalendarResponse(BaseModel):
     status: str = "ok"
     event: CalendarRecommendationOut
+    delivery_mode: Literal["live", "stub"] = "stub"
+    delivery_detail: str = ""
+    html_link: Optional[str] = None
 
 
 # -- admin --------------------------------------------------------------------

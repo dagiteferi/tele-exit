@@ -12,4 +12,5 @@ class CalendarPort(ABC):
         topic: str,
         start_iso: str,
         duration_minutes: int,
+        attendee_email: str | None = None,
     ) -> str: ...
