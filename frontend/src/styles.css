@@ -195,12 +195,22 @@
   50%      { opacity: 1; }
 }
 
+@keyframes tx-skeleton-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 0.85; }
+}
+
 @utility fade-in {
   animation: tx-fade-in 180ms ease-out both;
 }
 
 @utility pulse-dot {
   animation: tx-pulse 1.6s ease-in-out infinite;
+}
+
+@utility skeleton-pulse {
+  background-color: color-mix(in oklab, var(--ink) 12%, var(--paper));
+  animation: tx-skeleton-pulse 1.6s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -212,5 +222,10 @@
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+  }
+
+  .skeleton-pulse {
+    animation: none !important;
+    opacity: 0.55;
   }
 }

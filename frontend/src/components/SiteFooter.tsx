@@ -105,8 +105,10 @@ export function BrandMark({
       <img
         src={inverted ? "/logo-light.svg" : "/logo.svg"}
         alt="Tele-Exit"
-        width={148}
+        width={160}
         height={32}
+        decoding="async"
+        fetchPriority="high"
         className="h-8 w-auto"
       />
     </Link>

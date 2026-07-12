@@ -1,6 +1,7 @@
 import { Navigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useAuth, type Role } from "@/lib/auth";
+import { AppSplash } from "@/components/AppSplash";
 
 /**
  * Client-side route guard.
@@ -20,13 +21,7 @@ export function ProtectedRoute({
 }) {
   const { user, ready } = useAuth();
 
-  if (!ready) {
-    return (
-      <div className="flex min-h-dvh items-center justify-center bg-background">
-        <span className="eyebrow text-muted-foreground">Loading</span>
-      </div>
-    );
-  }
+  if (!ready) return <AppSplash />;
   if (!user) return <Navigate to="/login" />;
   if (role && user.role !== role) return <Navigate to="/dashboard" />;
   return <>{children}</>;

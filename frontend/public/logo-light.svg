@@ -1,12 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 48" fill="none" role="img" aria-label="Tele-Exit">
-  <circle cx="14" cy="24" r="8" fill="#D4A24C"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 40" fill="none" role="img" aria-label="Tele-Exit">
+  <rect x="0" y="2" width="36" height="36" rx="9" fill="#FAF8F5"/>
+  <path
+    d="M11 15.5c0-2.2 2.1-4 4.7-4h4.6c2.6 0 4.7 1.8 4.7 4v4.2c0 2.2-2.1 4-4.7 4H16.4L11 26.5V15.5Z"
+    fill="#D4A24C"
+  />
+  <circle cx="15.2" cy="17.6" r="1.15" fill="#1B2A4A"/>
+  <circle cx="18.5" cy="17.6" r="1.15" fill="#1B2A4A"/>
+  <circle cx="21.8" cy="17.6" r="1.15" fill="#1B2A4A"/>
   <text
-    x="34"
-    y="32"
+    x="46"
+    y="27"
     fill="#FAF8F5"
     font-family="Fraunces, Georgia, 'Times New Roman', serif"
-    font-size="28"
-    font-weight="500"
+    font-size="22"
+    font-weight="560"
     letter-spacing="-0.02em"
   >Tele-Exit</text>
 </svg>

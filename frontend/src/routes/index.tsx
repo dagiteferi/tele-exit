@@ -1,7 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { lazy, Suspense } from "react";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
-import { ChatbotWidget } from "@/components/ChatbotWidget";
+
+const ChatbotWidget = lazy(() =>
+  import("@/components/ChatbotWidget").then((m) => ({ default: m.ChatbotWidget })),
+);
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -24,6 +28,7 @@ function Landing() {
             backgroundRepeat: "no-repeat",
             backgroundPosition: "right bottom",
             backgroundSize: "cover",
+            contentVisibility: "auto",
           }}
         >
           <div className="mx-auto grid max-w-6xl items-center gap-16 px-5 pb-20 pt-12 md:grid-cols-2 md:gap-24 md:pb-28 md:pt-20">
@@ -215,7 +220,9 @@ function Landing() {
       </main>
 
       <SiteFooter />
-      <ChatbotWidget />
+      <Suspense fallback={null}>
+        <ChatbotWidget />
+      </Suspense>
     </div>
   );
 }
