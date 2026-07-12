@@ -1,12 +1,19 @@
-# Tele-Exit Backend
+# Tele-Exit
 
-Exam-prep tutoring backend (FastAPI + hexagonal architecture).
+Exam-prep tutoring (FastAPI backend + hexagonal architecture).
 
-## Quick start
+## Layout
+
+- `backend/` — API, domain, adapters, tests
+- `frontend/` — UI (placeholder)
+- `integration/` — cross-service integration (placeholder)
+
+## Backend quick start
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
+cd backend
 pip install -r requirements.txt
 cp .env.example .env
 uvicorn app.main:app --reload
@@ -29,7 +36,7 @@ Implements Tele-Exit Backend Spec v3:
 
 ## Environment
 
-See `.env.example`. Important:
+See `backend/.env.example`. Important:
 
 - `USE_FAKES=true` — local demo without external APIs
 - `ADMIN_BOOTSTRAP_EMAIL` / `ADMIN_BOOTSTRAP_PASSWORD` — create admin on startup
@@ -38,5 +45,6 @@ See `.env.example`. Important:
 ## Tests
 
 ```bash
+cd backend
 pytest
 ```
