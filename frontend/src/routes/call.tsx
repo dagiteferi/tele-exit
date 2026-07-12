@@ -44,6 +44,7 @@ interface QuestionCard {
   topic: string;
   text: string;
   choices: string[];
+  referenceAnswer?: string | null;
 }
 
 interface PracticeCallHandoff {
@@ -54,15 +55,9 @@ interface PracticeCallHandoff {
   attemptId?: string;
   returnTo?: string;
   roomName?: string;
-  question?: {
-    id?: string;
-    topic: string;
-    text: string;
-    choices?: string[];
-    index: number;
-    total: number;
-    referenceAnswer?: string | null;
-  };
+  questionIndex?: number;
+  questions?: QuestionCard[];
+  question?: QuestionCard;
 }
 
 type Turn = { id: string; who: "agent" | "you"; text: string };
@@ -84,7 +79,40 @@ function CallScreen() {
   const handoff = useRef(readHandoff()).current;
   const examTitle = handoff?.examTitle?.trim() || "Practice exam";
   const attemptId = handoff?.attemptId || "";
-  const questionId = handoff?.question?.id || "";
+
+  const deck: QuestionCard[] = useMemo(() => {
+    if (handoff?.questions?.length) {
+      return handoff.questions.map((q, i) => ({
+        ...q,
+        index: q.index || i + 1,
+        total: handoff.questions!.length,
+        choices: q.choices ?? [],
+      }));
+    }
+    if (handoff?.question) {
+      return [
+        {
+          ...handoff.question,
+          choices: handoff.question.choices ?? [],
+        },
+      ];
+    }
+    return [
+      {
+        index: 1,
+        total: 1,
+        topic: "Study call",
+        text: "Walk me through how you’d approach this topic out loud.",
+        choices: [],
+      },
+    ];
+  }, [handoff]);
+
+  const [cursor, setCursor] = useState(() =>
+    Math.min(Math.max(handoff?.questionIndex ?? 0, 0), Math.max(deck.length - 1, 0)),
+  );
+  const question = deck[cursor] || deck[0];
+  const questionId = question?.id || "";
 
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(true);
@@ -98,28 +126,10 @@ function CallScreen() {
     description?: string;
   } | null>(null);
   const [findingVideo, setFindingVideo] = useState(false);
-  const [question] = useState<QuestionCard>(() =>
-    handoff?.question
-      ? {
-          id: handoff.question.id,
-          index: handoff.question.index,
-          total: handoff.question.total,
-          topic: handoff.question.topic,
-          text: handoff.question.text,
-          choices: handoff.question.choices ?? [],
-        }
-      : {
-          index: 1,
-          total: 1,
-          topic: "Study call",
-          text: "Walk me through how you’d approach this topic out loud.",
-          choices: [],
-        },
-  );
 
   const welcomeText = useMemo(
-    () => handoff?.welcomeText?.trim() || buildCallOpening(examTitle, question.index),
-    [handoff?.welcomeText, examTitle, question.index],
+    () => handoff?.welcomeText?.trim() || buildCallOpening(examTitle, question?.index ?? 1),
+    [handoff?.welcomeText, examTitle, question?.index],
   );
 
   const [transcript, setTranscript] = useState<Turn[]>([
@@ -141,6 +151,27 @@ function CallScreen() {
   const pushTurn = useCallback((who: "agent" | "you", text: string) => {
     setTranscript((prev) => [...prev, { id: `t-${Date.now()}-${prev.length}`, who, text }]);
   }, []);
+
+  const goToQuestion = useCallback(
+    (nextCursor: number) => {
+      if (nextCursor < 0 || nextCursor >= deck.length || nextCursor === cursor) return;
+      setCursor(nextCursor);
+      setSharedVideo(null);
+      setFindingVideo(false);
+      setSharePhase("shared");
+      const q = deck[nextCursor];
+      const line = `Okay — jumping to question ${q.index} of ${q.total}. Take a look at the shared screen.`;
+      pushTurn("agent", line);
+      cancelSpeakRef.current?.();
+      window.speechSynthesis?.cancel();
+      setSpeaking(true);
+      cancelSpeakRef.current = speakNow(forSpeech(line), {
+        onStart: () => setSpeaking(true),
+        onEnd: () => setSpeaking(false),
+      });
+    },
+    [cursor, deck, pushTurn],
+  );
 
   const askCoach = useCallback(
     async (spoken: string) => {
@@ -550,8 +581,8 @@ function CallScreen() {
                 </div>
               )}
 
-              {sharePhase === "shared" && (
-                <div className="mx-auto max-w-3xl px-5 py-5 md:px-8 md:py-7">
+              {sharePhase === "shared" && question && (
+                <div key={question.id || question.index} className="meet-share-in mx-auto max-w-3xl px-5 py-5 md:px-8 md:py-7">
                   <div className="mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-black/10 pb-3">
                     <div className="flex items-end gap-3">
                       <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-xl bg-[#1c2430] text-white shadow-sm">
@@ -640,6 +671,31 @@ function CallScreen() {
                         </li>
                       ))}
                     </ul>
+                  )}
+
+                  {/* Jump between exam questions on the shared screen */}
+                  {deck.length > 1 && (
+                    <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-black/10 pt-4">
+                      <button
+                        type="button"
+                        disabled={cursor <= 0}
+                        onClick={() => goToQuestion(cursor - 1)}
+                        className="rounded-lg border border-black/15 bg-white/90 px-4 py-2 text-sm font-medium text-[#1c2430] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        ← Previous
+                      </button>
+                      <p className="text-xs text-[#5b6573]">
+                        Q{question.index} / {question.total}
+                      </p>
+                      <button
+                        type="button"
+                        disabled={cursor >= deck.length - 1}
+                        onClick={() => goToQuestion(cursor + 1)}
+                        className="rounded-lg border border-black/15 bg-white/90 px-4 py-2 text-sm font-medium text-[#1c2430] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Next →
+                      </button>
+                    </div>
                   )}
                 </div>
               )}
