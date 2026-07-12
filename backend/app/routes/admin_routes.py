@@ -22,7 +22,9 @@ from app.ingestion.question_parser import (
 )
 from app.schemas import (
     AdminUserOut,
+    ExamDetailOut,
     ExamOut,
+    ExamQuestionOut,
     ExamUploadResponse,
     InviteAdminRequest,
     InviteAdminResponse,
@@ -94,6 +96,42 @@ async def list_all_exams(
         )
         for e in exams
     ]
+
+
+@router.get("/exams/{exam_id}", response_model=ExamDetailOut)
+async def get_admin_exam_detail(
+    exam_id: str,
+    _admin_id: str = Depends(get_current_admin),
+    container: AppContainer = Depends(get_container),
+):
+    exam = await container.repo.get_exam(exam_id)
+    if exam is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exam not found")
+    questions = await container.repo.list_exam_questions(exam_id)
+    return ExamDetailOut(
+        exam=ExamOut(
+            id=exam["id"],
+            title=exam["title"],
+            field_of_study=exam["field_of_study"],
+            year=exam.get("year"),
+            description=exam.get("description"),
+            question_count=len(questions),
+            created_at=exam.get("created_at"),
+        ),
+        questions=[
+            ExamQuestionOut(
+                id=q["id"],
+                topic=q["topic"],
+                year=int(q["year"]),
+                question_text=q["question_text"],
+                choices=q.get("choices"),
+                reference_answer=q.get("reference_answer"),
+                field_of_study=q.get("field_of_study"),
+            )
+            for q in questions
+        ],
+        mode="practice",
+    )
 
 
 @router.post("/exams/upload", response_model=ExamUploadResponse)

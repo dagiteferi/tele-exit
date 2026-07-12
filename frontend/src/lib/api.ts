@@ -385,6 +385,36 @@ export async function listAdminExams(): Promise<ExamSummary[]> {
   return rows.map(mapExam);
 }
 
+export async function getAdminExamDetail(examId: string): Promise<{
+  exam: ExamSummary;
+  questions: ExamQuestion[];
+}> {
+  const data = await apiFetch<{
+    exam: {
+      id: string;
+      title: string;
+      field_of_study: string;
+      year?: number | null;
+      description?: string | null;
+      question_count: number;
+      created_at?: string | null;
+    };
+    questions: {
+      id: string;
+      topic: string;
+      year: number;
+      question_text: string;
+      choices?: string[] | null;
+      reference_answer?: string | null;
+      field_of_study?: string | null;
+    }[];
+  }>(`/admin/exams/${examId}`);
+  return {
+    exam: mapExam(data.exam),
+    questions: data.questions.map(mapQuestion),
+  };
+}
+
 export async function listQuestions(): Promise<QuestionRow[]> {
   const rows = await apiFetch<
     {
