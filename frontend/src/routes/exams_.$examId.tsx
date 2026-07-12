@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import {
+  getExam,
   practiceChat,
   startExamAttempt,
   startStudyCall,
@@ -34,7 +35,7 @@ type AttemptResult = {
 };
 
 function attemptStorageKey(examId: string, mode: string) {
-  return `tele-exit-session:v3:${examId}:${mode}`;
+  return `tele-exit-session:v4:${examId}:${mode}`;
 }
 
 type SavedSession = {
@@ -136,19 +137,50 @@ function ExamSessionPage() {
   });
 
   useEffect(() => {
-    const saved = loadSavedSession(examId, mode);
-    if (saved && sessionLooksValid(saved)) {
-      setAttemptId(saved.attemptId);
-      setQuestions(saved.questions);
-      setIndex(Math.min(saved.index || 0, saved.questions.length - 1));
-      setAnswers(saved.answers || {});
-      setRevealed(saved.revealed || {});
-      setChatByQuestion(saved.chatByQuestion || {});
-      setBooting(false);
-      return;
+    let cancelled = false;
+
+    async function boot() {
+      const saved = loadSavedSession(examId, mode);
+      if (saved && sessionLooksValid(saved)) {
+        let questionsToUse = saved.questions;
+        // Refresh bank answers/explanations so Show answer isn't stuck on stale cache.
+        if (mode === "practice") {
+          try {
+            const detail = await getExam(examId, "practice");
+            const byId = Object.fromEntries(detail.questions.map((q) => [q.id, q]));
+            questionsToUse = saved.questions.map((q) => {
+              const fresh = byId[q.id];
+              if (!fresh) return q;
+              return {
+                ...q,
+                questionText: fresh.questionText,
+                choices: fresh.choices,
+                referenceAnswer: fresh.referenceAnswer ?? q.referenceAnswer,
+                explanation: fresh.explanation ?? q.explanation,
+              };
+            });
+          } catch {
+            // keep saved questions if refresh fails
+          }
+        }
+        if (cancelled) return;
+        setAttemptId(saved.attemptId);
+        setQuestions(questionsToUse);
+        setIndex(Math.min(saved.index || 0, questionsToUse.length - 1));
+        setAnswers(saved.answers || {});
+        setRevealed(saved.revealed || {});
+        setChatByQuestion(saved.chatByQuestion || {});
+        setBooting(false);
+        return;
+      }
+      clearSession(examId, mode);
+      if (!cancelled) start.mutate();
     }
-    clearSession(examId, mode);
-    start.mutate();
+
+    void boot();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [examId, mode]);
 
@@ -313,12 +345,25 @@ function ExamSessionPage() {
           </p>
           <h1 className="mt-1 truncate font-display text-2xl text-primary">{current.topic}</h1>
         </div>
-        <Link
-          to="/exams"
-          className="rounded-lg border border-input px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-primary"
-        >
-          Exit
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to="/exams"
+            className="rounded-lg border border-input px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-primary"
+          >
+            Exit
+          </Link>
+          {isPractice && (
+            <button
+              type="button"
+              disabled={callBusy}
+              onClick={() => void onStudyCall()}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+            >
+              <CallIcon />
+              {callBusy ? "Starting…" : "Start study call"}
+            </button>
+          )}
+        </div>
       </header>
 
       {error && (
@@ -471,15 +516,6 @@ function ExamSessionPage() {
                   }
                 >
                   {isChatOpen ? "Hide AI chat" : "Ask AI about this"}
-                </button>
-                <button
-                  type="button"
-                  disabled={callBusy}
-                  onClick={() => void onStudyCall()}
-                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-                >
-                  <CallIcon />
-                  {callBusy ? "Starting…" : "Start study call"}
                 </button>
               </div>
             )}
