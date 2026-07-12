@@ -75,7 +75,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Tele-Exit — Practice for your exit exam, one call at a time" },
+      { title: "Tele-Exit" },
       {
         name: "description",
         content:
@@ -83,7 +83,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { name: "author", content: "Tele-Exit" },
       { name: "theme-color", content: "#1B2A4A" },
-      { property: "og:title", content: "Tele-Exit — Practice for your exit exam" },
+      { property: "og:title", content: "Tele-Exit" },
       {
         property: "og:description",
         content:

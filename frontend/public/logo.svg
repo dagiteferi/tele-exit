@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 48" fill="none" role="img" aria-label="Tele-Exit">
+  <circle cx="14" cy="24" r="8" fill="#D4A24C"/>
+  <text
+    x="34"
+    y="32"
+    fill="#1B2A4A"
+    font-family="Fraunces, Georgia, 'Times New Roman', serif"
+    font-size="28"
+    font-weight="500"
+    letter-spacing="-0.02em"
+  >Tele-Exit</text>
+</svg>
