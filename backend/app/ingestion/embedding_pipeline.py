@@ -117,6 +117,11 @@ def _validate_raw_question(
         "question_text": str(question_text).strip(),
         "reference_answer": str(reference_answer).strip(),
         "choices": choices,
+        "explanation": (
+            str(expl).strip()
+            if (expl := _pick(raw, "explanation", "description", "rationale", "answer_description"))
+            else None
+        ),
         "field_of_study": field_of_study or _pick(raw, "field_of_study", "department", "field"),
     }
 
@@ -162,6 +167,7 @@ async def ingest_questions(
                     exam_id=exam_id,
                     field_of_study=validated.get("field_of_study") or field_of_study,
                     choices=validated.get("choices"),
+                    explanation=validated.get("explanation"),
                 )
             )
         except Exception as exc:

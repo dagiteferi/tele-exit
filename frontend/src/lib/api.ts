@@ -306,6 +306,7 @@ export interface ExamQuestion {
   questionText: string;
   choices?: string[] | null;
   referenceAnswer?: string | null;
+  explanation?: string | null;
   fieldOfStudy?: string | null;
 }
 
@@ -349,6 +350,7 @@ function mapQuestion(q: {
   question_text: string;
   choices?: string[] | null;
   reference_answer?: string | null;
+  explanation?: string | null;
   field_of_study?: string | null;
 }): ExamQuestion {
   return {
@@ -358,6 +360,7 @@ function mapQuestion(q: {
     questionText: q.question_text,
     choices: q.choices,
     referenceAnswer: q.reference_answer,
+    explanation: q.explanation,
     fieldOfStudy: q.field_of_study,
   };
 }

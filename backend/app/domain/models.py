@@ -164,6 +164,7 @@ class ExamQuestion:
     exam_id: Optional[str] = None
     field_of_study: Optional[str] = None
     choices: Optional[list[str]] = None
+    explanation: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not self.topic.strip():

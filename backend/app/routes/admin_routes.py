@@ -126,6 +126,7 @@ async def get_admin_exam_detail(
                 question_text=q["question_text"],
                 choices=q.get("choices"),
                 reference_answer=q.get("reference_answer"),
+                explanation=q.get("explanation"),
                 field_of_study=q.get("field_of_study"),
             )
             for q in questions

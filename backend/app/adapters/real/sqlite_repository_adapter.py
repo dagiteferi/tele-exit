@@ -442,7 +442,7 @@ class SQLiteRepositoryAdapter(RepositoryPort):
             rows = connection.execute(
                 """
                 SELECT id, exam_id, field_of_study, topic, year,
-                       question_text, reference_answer, choices_json, source
+                       question_text, reference_answer, explanation, choices_json, source
                 FROM exam_questions
                 WHERE exam_id = ?
                 ORDER BY created_at, topic
@@ -462,7 +462,7 @@ class SQLiteRepositoryAdapter(RepositoryPort):
             rows = connection.execute(
                 """
                 SELECT id, exam_id, field_of_study, topic, year,
-                       question_text, reference_answer, choices_json, source
+                       question_text, reference_answer, explanation, choices_json, source
                 FROM exam_questions
                 ORDER BY created_at DESC
                 LIMIT ?
