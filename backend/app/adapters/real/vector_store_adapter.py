@@ -1,0 +1,148 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+from pathlib import Path
+from typing import Any
+
+from app.ports.embedding_port import EmbeddingPort
+from app.ports.vector_store_port import VectorStorePort
+
+SCHEMA_PATH = Path(__file__).resolve().parents[3] / "db" / "schema.sql"
+
+
+class LocalVectorStoreAdapter(VectorStorePort):
+    """Durable local vector store using SQLite (JSON embeddings)."""
+
+    def __init__(self, db_path: str = "./tele_exit.db") -> None:
+        self.db_path = db_path
+        self._ensure_schema()
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.db_path)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        return connection
+
+    def _ensure_schema(self) -> None:
+        schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
+        with self._connect() as connection:
+            connection.executescript(schema_sql)
+            connection.commit()
+
+    async def store(self, question, embedding: list[float]) -> None:
+        if hasattr(question, "question_text"):
+            record = {
+                "id": getattr(question, "id", ""),
+                "topic": getattr(question, "topic", ""),
+                "year": int(getattr(question, "year", 0)),
+                "question_text": question.question_text,
+                "reference_answer": getattr(question, "reference_answer", ""),
+                "source": getattr(question, "source", "user_uploaded"),
+            }
+        elif isinstance(question, dict):
+            record = {
+                "id": question["id"],
+                "topic": question.get("topic", ""),
+                "year": int(question.get("year", 0)),
+                "question_text": question["question_text"],
+                "reference_answer": question.get("reference_answer", ""),
+                "source": question.get("source", "user_uploaded"),
+            }
+        else:
+            raise TypeError("question must be an ExamQuestion-like object or dict")
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO exam_questions (
+                    id, topic, year, question_text, reference_answer, source
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    topic = excluded.topic,
+                    year = excluded.year,
+                    question_text = excluded.question_text,
+                    reference_answer = excluded.reference_answer,
+                    source = excluded.source
+                """,
+                (
+                    record["id"],
+                    record["topic"],
+                    record["year"],
+                    record["question_text"],
+                    record["reference_answer"],
+                    record["source"],
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO question_embeddings (question_id, embedding)
+                VALUES (?, ?)
+                ON CONFLICT(question_id) DO UPDATE SET
+                    embedding = excluded.embedding
+                """,
+                (record["id"], json.dumps(embedding)),
+            )
+            connection.commit()
+
+    async def query(
+        self,
+        text: str,
+        embedding_port: EmbeddingPort,
+        top_k: int = 3,
+    ) -> list[dict]:
+        query_embedding = await embedding_port.embed(text)
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    q.id,
+                    q.topic,
+                    q.year,
+                    q.question_text,
+                    q.reference_answer,
+                    e.embedding
+                FROM exam_questions q
+                JOIN question_embeddings e ON e.question_id = q.id
+                """
+            ).fetchall()
+
+        scored: list[tuple[float, dict[str, Any]]] = []
+        for row in rows:
+            stored = json.loads(row["embedding"])
+            score = _cosine_similarity(query_embedding, stored)
+            score += _keyword_overlap(text, row["question_text"])
+            scored.append(
+                (
+                    score,
+                    {
+                        "id": row["id"],
+                        "topic": row["topic"],
+                        "year": row["year"],
+                        "question_text": row["question_text"],
+                        "reference_answer": row["reference_answer"],
+                    },
+                )
+            )
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return [item for _, item in scored[:top_k]]
+
+
+def _cosine_similarity(left: list[float], right: list[float]) -> float:
+    if not left or not right:
+        return 0.0
+    size = min(len(left), len(right))
+    dot = sum(left[i] * right[i] for i in range(size))
+    left_norm = sum(value * value for value in left[:size]) ** 0.5
+    right_norm = sum(value * value for value in right[:size]) ** 0.5
+    if left_norm == 0 or right_norm == 0:
+        return 0.0
+    return dot / (left_norm * right_norm)
+
+
+def _keyword_overlap(query: str, document: str) -> float:
+    query_terms = set(query.lower().split())
+    doc_terms = set(document.lower().split())
+    if not query_terms:
+        return 0.0
+    return len(query_terms & doc_terms) / len(query_terms)
