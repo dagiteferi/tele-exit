@@ -34,7 +34,7 @@ class GeminiLLMAdapter(LLMPort):
         # de-dupe while preserving order
         seen: set[str] = set()
         self.models = tuple(m for m in ordered if not (m in seen or seen.add(m)))
-        self._client = httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=5.0))
+        self._client = httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=4.0))
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -52,9 +52,10 @@ class GeminiLLMAdapter(LLMPort):
                 if status == 429:
                     await asyncio.sleep(0.15)
                     continue
-                if status in {404, 400}:
+                # Skip unavailable / blocked models instead of aborting the whole loop.
+                if status in {400, 403, 404, 503}:
                     continue
-                raise
+                continue
             except (httpx.TimeoutException, httpx.TransportError) as exc:
                 last_error = exc
                 logger.warning("Gemini %s transport error: %s", model, exc)
@@ -72,7 +73,7 @@ class GeminiLLMAdapter(LLMPort):
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {
                 "temperature": 0.35,
-                "maxOutputTokens": 220,
+                "maxOutputTokens": 120,
             },
         }
         if system.strip():

@@ -285,9 +285,9 @@ function ExamSessionPage() {
       [qid]: [...(prev[qid] || []), { who: "you", text: msg }],
     }));
     try {
-      const reply = await practiceChat(attemptId, qid, msg);
+      const res = await practiceChat(attemptId, qid, msg);
       setChatBusy(false);
-      await streamAiText(qid, reply || "Let's walk through this step by step.");
+      await streamAiText(qid, res.reply || "Let's walk through this step by step.");
     } catch (err) {
       setChatBusy(false);
       setChatByQuestion((prev) => ({

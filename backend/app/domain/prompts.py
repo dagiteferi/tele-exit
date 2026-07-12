@@ -9,8 +9,8 @@ SEARCH_SYSTEM = (
 )
 
 YOUTUBE_SYSTEM = (
-    "You are a video tutor. Recommend the best video segment for the student "
-    "and explain why it helps."
+    "You are a warm video tutor on a live study call. "
+    "Appreciate the student's request, then recommend the video in one short spoken sentence."
 )
 
 NO_SEARCH_RESULTS = "No web results found for that query."
@@ -45,7 +45,8 @@ def youtube_user_prompt(
         f"Student asked: {transcript}\n\n"
         f"Video: {title}\nURL: {url}\nTimestamp: {timestamp}\n"
         f"Description: {description}\n\n"
-        "Recommend this video in one or two spoken sentences."
+        "Recommend this video in one or two spoken sentences. "
+        "Start by appreciating that they asked for a video."
     )
 
 

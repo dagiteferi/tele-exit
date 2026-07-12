@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
+
 from app.ports.llm_port import LLMPort
+
+logger = logging.getLogger(__name__)
 
 _SYSTEM = (
     "You are Tele-Exit, a sharp exit-exam study coach. "
@@ -16,14 +21,19 @@ _SYSTEM = (
 
 _VOICE_SYSTEM = (
     "You are Tele-Exit on a live video study call. "
-    "Speak like a real tutor: warm, clear, fast. "
+    "Speak like a real tutor: warm, clear, fast, and encouraging. "
+    "Always appreciate the student's effort first when they try an answer or idea "
+    "(even if they are wrong) — e.g. 'Nice try', 'Good thinking', 'I like that approach' — "
+    "then gently correct or guide. "
     "Use ONLY the provided question, choices, correct answer, and explanation. "
     "Never invent a different correct option. "
-    "Reply in 1–2 short spoken sentences (max ~45 words). "
+    "Reply in 1–2 short spoken sentences (max ~40 words). "
     "No markdown, no bullet lists, no LaTeX. "
     "Prefer a hint or next step unless they ask for the full answer. "
     "If they say they are ready, ask one focused question about the shared screen."
 )
+
+_VOICE_LLM_TIMEOUT_S = 6.0
 
 
 def _format_choices(choices: list[str] | None) -> str:
@@ -40,22 +50,38 @@ def grounded_reply(question: dict, message: str, *, voice: bool = False) -> str:
 
     wants_hint = any(w in msg for w in ("hint", "clue", "help", "stuck", "start"))
     ready = any(w in msg for w in ("ready", "yes", "okay", "ok", "sure", "let's", "lets"))
+    trying = any(
+        w in msg
+        for w in ("i think", "maybe", "i believe", "my answer", "option", "because")
+    )
 
     if ready:
-        return "Great — what’s your first instinct on this question?"
+        return "Love the energy — you're ready. What’s your first instinct on this question?"
     if wants_hint and explanation:
         first = explanation.split(".")[0].strip()
-        return f"Hint: focus on this — {first}."
+        return f"Good ask — here’s a hint: focus on this — {first}."
     if wants_hint:
-        return "Hint: eliminate options that contradict the question stem."
+        return "Nice — you’re thinking. Hint: eliminate options that contradict the question stem."
+    if trying and explanation:
+        first = explanation.split(".")[0].strip()
+        return f"Nice try — I like that you're reasoning out loud. Think about this: {first}."
+    if trying:
+        return "Nice try — keep that going. What part of the shared question feels most important?"
 
     if explanation and answer:
         if voice:
-            return f"The bank answer is {answer}. {explanation.split('.')[0].strip()}."
+            return (
+                f"I appreciate you working through it. "
+                f"The bank answer is {answer}. {explanation.split('.')[0].strip()}."
+            )
         return f"Correct answer: {answer}\n\n{explanation}"
     if answer:
-        return f"The correct answer is {answer}."
-    return "I don't have a stored explanation yet — try saying that again."
+        return (
+            f"Solid effort. The correct answer is {answer}."
+            if voice
+            else f"The correct answer is {answer}."
+        )
+    return "Nice try — keep going. Look at the shared question and tell me your next thought."
 
 
 def build_practice_prompt(question: dict, message: str) -> str:
@@ -88,10 +114,22 @@ async def coach_reply(
     prompt = build_practice_prompt(question, message)
     if voice:
         prompt += "\nRespond for spoken video call — short and natural."
+
     try:
-        text = (await llm.generate(prompt, system=system)).strip()
+        if voice:
+            text = (
+                await asyncio.wait_for(
+                    llm.generate(prompt, system=system),
+                    timeout=_VOICE_LLM_TIMEOUT_S,
+                )
+            ).strip()
+        else:
+            text = (await llm.generate(prompt, system=system)).strip()
         if text:
             return text
+    except asyncio.TimeoutError:
+        logger.warning("Coach LLM timed out (voice=%s); using bank fallback", voice)
     except Exception:
-        pass
+        logger.exception("Coach LLM failed; using bank fallback")
+
     return grounded_reply(question, message, voice=voice)

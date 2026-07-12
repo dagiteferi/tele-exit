@@ -27,7 +27,10 @@ class SearchAgent:
         if not state.transcript.strip():
             raise ValueError("transcript is required")
 
-        results = await self._search.search(state.transcript)
+        try:
+            results = await self._search.search(state.transcript)
+        except Exception:
+            results = []
         if not results:
             return AgentResult(
                 text=NO_SEARCH_RESULTS,

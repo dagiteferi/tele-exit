@@ -10,7 +10,7 @@ from app.core.di import (
     AppContainer,
     get_container,
 )
-from app.domain.practice_coach import coach_reply
+from app.domain.practice_coach import coach_reply, grounded_reply
 from app.domain.voice_call import voice_call_turn
 from app.schemas import (
     ExamDetailOut,
@@ -258,23 +258,37 @@ async def practice_chat(
         raise HTTPException(status_code=400, detail="Message is required")
 
     if (body.mode or "").lower() == "voice":
-        turn = await voice_call_turn(
-            llm=container.llm,
-            search=container.search,
-            video_search=container.video_search,
-            student_id=student_id,
-            question=question,
-            message=message,
-        )
+        try:
+            turn = await voice_call_turn(
+                llm=container.llm,
+                search=container.search,
+                video_search=container.video_search,
+                student_id=student_id,
+                question=question,
+                message=message,
+            )
+        except Exception:
+            # Never 500 a live study call — keep the conversation moving.
+            turn = {
+                "reply": grounded_reply(question, message, voice=True),
+                "agent_used": "curriculum",
+                "action": None,
+                "video": None,
+            }
         video = turn.get("video")
         return PracticeChatResponse(
             reply=turn.get("reply") or "Let's keep going.",
             agent_used=turn.get("agent_used"),
             action=turn.get("action"),
-            video=PracticeChatVideo(**video) if isinstance(video, dict) and video.get("url") else None,
+            video=PracticeChatVideo(**video)
+            if isinstance(video, dict) and video.get("url")
+            else None,
         )
 
-    reply = await coach_reply(container.llm, question, message, mode=body.mode)
+    try:
+        reply = await coach_reply(container.llm, question, message, mode=body.mode)
+    except Exception:
+        reply = grounded_reply(question, message, voice=False)
     return PracticeChatResponse(
         reply=reply or "Let's walk through this step by step.",
         agent_used="curriculum",
