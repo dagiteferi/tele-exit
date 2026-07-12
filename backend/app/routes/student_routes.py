@@ -12,14 +12,21 @@ from app.core.di import (
 )
 from app.domain.agents.memory_agent import MemoryAgent
 from app.domain.models import SessionEvent
+from app.domain.session_wrapup import wrap_up_session
 from app.schemas import (
+    AcceptCalendarResponse,
     CalendarEventOut,
+    CalendarRecommendationOut,
     OpeningQuestion,
+    PracticeProgressOut,
     ProfileResponse,
     RecentSessionOut,
     SessionEndRequest,
     SessionEndResponse,
     SessionStartResponse,
+    SessionSummaryOut,
+    SessionWrapUpRequest,
+    SessionWrapUpResponse,
     SettingsUpdateRequest,
     SettingsUpdateResponse,
     TopicScoreOut,
@@ -58,6 +65,36 @@ async def get_profile(
         )
         for row in recent_rows
     ]
+    practice_rows = await container.repo.list_practice_progress(student_id)
+    practice_progress = [
+        PracticeProgressOut(
+            attempt_id=str(row["attempt_id"]),
+            exam_id=str(row["exam_id"]),
+            exam_title=str(row["exam_title"]),
+            progress_index=int(row["progress_index"]),
+            question_number=int(row["question_number"]),
+            questions_visited=int(row["questions_visited"]),
+            question_total=int(row["question_total"]),
+            started_at=str(row.get("started_at") or ""),
+        )
+        for row in practice_rows
+    ]
+    summary_rows = await container.repo.list_session_summaries(student_id)
+    session_summaries = [
+        SessionSummaryOut(
+            id=str(row["id"]),
+            attempt_id=row.get("attempt_id"),
+            exam_id=row.get("exam_id"),
+            exam_title=str(row.get("exam_title") or ""),
+            questions_visited=int(row.get("questions_visited") or 0),
+            questions_attempted=int(row.get("questions_attempted") or 0),
+            questions_correct=int(row.get("questions_correct") or 0),
+            topics=list(row.get("topics") or []),
+            summary_text=str(row.get("summary_text") or ""),
+            created_at=str(row.get("created_at") or ""),
+        )
+        for row in summary_rows
+    ]
     freq = profile.get("report_frequency") or "weekly"
     if freq not in ("weekly", "monthly"):
         freq = "weekly"
@@ -74,6 +111,8 @@ async def get_profile(
         last_session_at=profile.get("last_session_at"),
         readiness_percent=int(profile.get("readiness_percent", 0)),
         recent_sessions=recent,
+        practice_progress=practice_progress,
+        session_summaries=session_summaries,
     )
 
 
@@ -93,7 +132,110 @@ async def list_calendar(
     container: AppContainer = Depends(get_container),
 ):
     events = await container.repo.list_calendar_events(student_id)
-    return [CalendarEventOut(**event) for event in events]
+    return [
+        CalendarEventOut(
+            id=str(event["id"]),
+            topic=str(event["topic"]),
+            start_iso=str(event["start_iso"]),
+            duration_minutes=int(event["duration_minutes"]),
+            external_event_id=event.get("external_event_id"),
+            status=str(event.get("status") or "suggested"),
+        )
+        for event in events
+    ]
+
+
+@router.post(
+    "/calendar/events/{event_id}/accept",
+    response_model=AcceptCalendarResponse,
+)
+async def accept_calendar_event(
+    event_id: str,
+    student_id: str = Depends(get_current_student_id),
+    container: AppContainer = Depends(get_container),
+):
+    events = await container.repo.list_calendar_events(student_id)
+    match = next((e for e in events if e["id"] == event_id), None)
+    if match is None:
+        raise HTTPException(status_code=404, detail="Calendar suggestion not found")
+
+    external_id = await container.calendar.create_study_event(
+        student_id=student_id,
+        topic=str(match["topic"]),
+        start_iso=str(match["start_iso"]),
+        duration_minutes=int(match["duration_minutes"]),
+    )
+    updated = await container.repo.accept_calendar_event(
+        student_id,
+        event_id,
+        external_event_id=external_id,
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Calendar suggestion not found")
+
+    return AcceptCalendarResponse(
+        event=CalendarRecommendationOut(
+            id=str(updated["id"]),
+            topic=str(updated["topic"]),
+            start_iso=str(updated["start_iso"]),
+            duration_minutes=int(updated["duration_minutes"]),
+            status=str(updated.get("status") or "accepted"),
+            external_event_id=updated.get("external_event_id"),
+        )
+    )
+
+
+@router.post("/session/wrap-up", response_model=SessionWrapUpResponse)
+async def session_wrap_up(
+    body: SessionWrapUpRequest,
+    student_id: str = Depends(get_current_student_id),
+    container: AppContainer = Depends(get_container),
+):
+    try:
+        result = await wrap_up_session(
+            student_id=student_id,
+            repo=container.repo,
+            llm=container.llm,
+            attempt_id=body.attempt_id,
+            exam_id=body.exam_id,
+            exam_title=body.exam_title,
+            question_ids=body.question_ids,
+            events=[e.model_dump() for e in body.events],
+            questions_visited=body.questions_visited,
+            persist_events=body.persist_events,
+        )
+    except ValueError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+
+    summary = result["summary"]
+    return SessionWrapUpResponse(
+        summary=SessionSummaryOut(
+            id=str(summary["id"]),
+            attempt_id=summary.get("attempt_id"),
+            exam_id=summary.get("exam_id"),
+            exam_title=str(summary.get("exam_title") or ""),
+            questions_visited=int(summary.get("questions_visited") or 0),
+            questions_attempted=int(summary.get("questions_attempted") or 0),
+            questions_correct=int(summary.get("questions_correct") or 0),
+            topics=list(summary.get("topics") or []),
+            summary_text=str(summary.get("summary_text") or ""),
+            created_at=str(summary.get("created_at") or ""),
+        ),
+        recommendations=[
+            CalendarRecommendationOut(
+                id=str(item["id"]),
+                topic=str(item["topic"]),
+                start_iso=str(item["start_iso"]),
+                duration_minutes=int(item["duration_minutes"]),
+                status=str(item.get("status") or "suggested"),
+                external_event_id=item.get("external_event_id"),
+            )
+            for item in result.get("recommendations") or []
+        ],
+        weak_topics=list(result.get("weak_topics") or []),
+        readiness_percent=int(result.get("readiness_percent") or 0),
+        sessions_completed=int(result.get("sessions_completed") or 0),
+    )
 
 
 @router.post("/session/start", response_model=SessionStartResponse)

@@ -127,6 +127,49 @@ export interface CalendarEvent {
   topic: string;
   scheduledAt: string; // ISO
   durationMinutes: number;
+  status?: "suggested" | "accepted" | string;
+  externalEventId?: string | null;
+}
+
+export interface SessionSummary {
+  id: string;
+  attemptId?: string | null;
+  examId?: string | null;
+  examTitle: string;
+  questionsVisited: number;
+  questionsAttempted: number;
+  questionsCorrect: number;
+  topics: string[];
+  summaryText: string;
+  createdAt: string;
+}
+
+export interface CalendarRecommendation {
+  id: string;
+  topic: string;
+  startIso: string;
+  durationMinutes: number;
+  status: string;
+  externalEventId?: string | null;
+}
+
+export interface SessionWrapUp {
+  summary: SessionSummary;
+  recommendations: CalendarRecommendation[];
+  weakTopics: string[];
+  readinessPercent: number;
+  sessionsCompleted: number;
+}
+
+export interface PracticeProgress {
+  attemptId: string;
+  examId: string;
+  examTitle: string;
+  progressIndex: number;
+  questionNumber: number;
+  questionsVisited: number;
+  questionTotal: number;
+  startedAt: string;
 }
 
 export interface StudentProfile {
@@ -137,6 +180,9 @@ export interface StudentProfile {
   topicScores: Record<string, TopicScore>;
   weakTopics: string[]; // topic keys, weakest first
   recentSessions: Session[];
+  practiceProgress: PracticeProgress[];
+  sessionSummaries: SessionSummary[];
+  sessionsCompleted: number;
   reportFrequency: "weekly" | "monthly";
 }
 
@@ -194,6 +240,28 @@ export async function getMyProfile(): Promise<StudentProfile> {
       attempted: number;
       date: string;
     }[];
+    practice_progress?: {
+      attempt_id: string;
+      exam_id: string;
+      exam_title: string;
+      progress_index: number;
+      question_number: number;
+      questions_visited: number;
+      question_total: number;
+      started_at?: string;
+    }[];
+    session_summaries?: {
+      id: string;
+      attempt_id?: string | null;
+      exam_id?: string | null;
+      exam_title?: string;
+      questions_visited?: number;
+      questions_attempted?: number;
+      questions_correct?: number;
+      topics?: string[];
+      summary_text?: string;
+      created_at?: string;
+    }[];
   }>("/students/me/profile");
 
   const topicScores: Record<string, TopicScore> = {};
@@ -237,6 +305,29 @@ export async function getMyProfile(): Promise<StudentProfile> {
       correct: s.correct,
       attempted: s.attempted,
     })),
+    practiceProgress: (data.practice_progress || []).map((p) => ({
+      attemptId: p.attempt_id,
+      examId: p.exam_id,
+      examTitle: p.exam_title,
+      progressIndex: p.progress_index,
+      questionNumber: p.question_number,
+      questionsVisited: p.questions_visited,
+      questionTotal: p.question_total,
+      startedAt: p.started_at || "",
+    })),
+    sessionSummaries: (data.session_summaries || []).map((s) => ({
+      id: s.id,
+      attemptId: s.attempt_id,
+      examId: s.exam_id,
+      examTitle: s.exam_title || "",
+      questionsVisited: s.questions_visited || 0,
+      questionsAttempted: s.questions_attempted || 0,
+      questionsCorrect: s.questions_correct || 0,
+      topics: s.topics || [],
+      summaryText: s.summary_text || "",
+      createdAt: s.created_at || "",
+    })),
+    sessionsCompleted: data.sessions_completed || 0,
     reportFrequency: data.report_frequency === "monthly" ? "monthly" : "weekly",
   };
 }
@@ -249,6 +340,7 @@ export async function getMyCalendar(): Promise<CalendarEvent[]> {
       start_iso: string;
       duration_minutes: number;
       external_event_id?: string | null;
+      status?: string;
     }[]
   >("/students/me/calendar");
   return rows.map((e) => ({
@@ -256,9 +348,135 @@ export async function getMyCalendar(): Promise<CalendarEvent[]> {
     topic: e.topic,
     scheduledAt: e.start_iso,
     durationMinutes: e.duration_minutes,
+    status: e.status || "suggested",
+    externalEventId: e.external_event_id,
   }));
 }
 
+export async function wrapUpSession(input: {
+  attemptId?: string;
+  examId?: string;
+  examTitle?: string;
+  questionIds?: string[];
+  questionsVisited?: number;
+  persistEvents?: boolean;
+  events?: {
+    questionId: string;
+    topic?: string;
+    studentAnswerTranscript?: string;
+    wasCorrect?: boolean;
+    agentUsed?: "curriculum" | "search" | "youtube";
+  }[];
+}): Promise<SessionWrapUp> {
+  const data = await apiFetch<{
+    summary: {
+      id: string;
+      attempt_id?: string | null;
+      exam_id?: string | null;
+      exam_title?: string;
+      questions_visited?: number;
+      questions_attempted?: number;
+      questions_correct?: number;
+      topics?: string[];
+      summary_text?: string;
+      created_at?: string;
+    };
+    recommendations: {
+      id: string;
+      topic: string;
+      start_iso: string;
+      duration_minutes: number;
+      status?: string;
+      external_event_id?: string | null;
+    }[];
+    weak_topics: string[];
+    readiness_percent: number;
+    sessions_completed: number;
+  }>("/students/me/session/wrap-up", {
+    method: "POST",
+    body: JSON.stringify({
+      attempt_id: input.attemptId,
+      exam_id: input.examId,
+      exam_title: input.examTitle || "",
+      question_ids: input.questionIds || [],
+      questions_visited: input.questionsVisited,
+      persist_events: input.persistEvents !== false,
+      events: (input.events || []).map((e) => ({
+        question_id: e.questionId,
+        topic: e.topic || "",
+        student_answer_transcript: e.studentAnswerTranscript || "",
+        was_correct: !!e.wasCorrect,
+        agent_used: e.agentUsed || "curriculum",
+      })),
+    }),
+  });
+  return {
+    summary: {
+      id: data.summary.id,
+      attemptId: data.summary.attempt_id,
+      examId: data.summary.exam_id,
+      examTitle: data.summary.exam_title || "",
+      questionsVisited: data.summary.questions_visited || 0,
+      questionsAttempted: data.summary.questions_attempted || 0,
+      questionsCorrect: data.summary.questions_correct || 0,
+      topics: data.summary.topics || [],
+      summaryText: data.summary.summary_text || "",
+      createdAt: data.summary.created_at || "",
+    },
+    recommendations: (data.recommendations || []).map((r) => ({
+      id: r.id,
+      topic: r.topic,
+      startIso: r.start_iso,
+      durationMinutes: r.duration_minutes,
+      status: r.status || "suggested",
+      externalEventId: r.external_event_id,
+    })),
+    weakTopics: data.weak_topics || [],
+    readinessPercent: data.readiness_percent || 0,
+    sessionsCompleted: data.sessions_completed || 0,
+  };
+}
+
+export async function acceptCalendarSuggestion(eventId: string): Promise<CalendarRecommendation> {
+  const data = await apiFetch<{
+    status: string;
+    event: {
+      id: string;
+      topic: string;
+      start_iso: string;
+      duration_minutes: number;
+      status?: string;
+      external_event_id?: string | null;
+    };
+  }>(`/students/me/calendar/events/${eventId}/accept`, { method: "POST" });
+  return {
+    id: data.event.id,
+    topic: data.event.topic,
+    startIso: data.event.start_iso,
+    durationMinutes: data.event.duration_minutes,
+    status: data.event.status || "accepted",
+    externalEventId: data.event.external_event_id,
+  };
+}
+
+export async function sendProgressReport(): Promise<{
+  emailTo?: string | null;
+  reportPreview: string;
+  calendarSuggestions: number;
+}> {
+  const data = await apiFetch<{
+    status: string;
+    student_id: string;
+    email_to?: string | null;
+    report_preview?: string;
+    calendar_suggestions?: number;
+  }>("/students/me/report", { method: "POST" });
+  return {
+    emailTo: data.email_to,
+    reportPreview: data.report_preview || "",
+    calendarSuggestions: data.calendar_suggestions || 0,
+  };
+}
 export async function updateSettings(input: { reportFrequency: "weekly" | "monthly" }) {
   await apiFetch<{ status: string; report_frequency: string }>("/students/me/settings", {
     method: "PATCH",
@@ -710,6 +928,37 @@ export async function practiceChat(
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function saveAttemptProgress(
+  attemptId: string,
+  questionIndex: number,
+  questionId?: string | null,
+): Promise<{
+  progressIndex: number;
+  questionNumber: number;
+  questionsVisited: number;
+  questionTotal: number;
+}> {
+  const data = await apiFetch<{
+    attempt_id: string;
+    progress_index: number;
+    question_number: number;
+    questions_visited: number;
+    question_total: number;
+  }>(`/exams/attempts/${attemptId}/progress`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      question_index: questionIndex,
+      question_id: questionId || undefined,
+    }),
+  });
+  return {
+    progressIndex: data.progress_index,
+    questionNumber: data.question_number,
+    questionsVisited: data.questions_visited,
+    questionTotal: data.question_total,
+  };
 }
 
 export async function startStudyCall(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from app.db import ensure_schema
@@ -14,6 +15,10 @@ from app.domain.models import (
     TopicScore,
 )
 from app.ports.repository_port import RepositoryPort
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
 
 class SQLiteRepositoryAdapter(RepositoryPort):
@@ -277,14 +282,150 @@ class SQLiteRepositoryAdapter(RepositoryPort):
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT id, topic, start_iso, duration_minutes, external_event_id
+                SELECT id, topic, start_iso, duration_minutes, external_event_id, status
                 FROM calendar_events
                 WHERE student_id = ?
                 ORDER BY start_iso
                 """,
                 (student_id,),
             ).fetchall()
-        return [dict(row) for row in rows]
+        results = []
+        for row in rows:
+            item = dict(row)
+            item["status"] = item.get("status") or "suggested"
+            results.append(item)
+        return results
+
+    async def create_calendar_suggestion(
+        self,
+        student_id: str,
+        topic: str,
+        start_iso: str,
+        duration_minutes: int,
+    ) -> dict:
+        event_id = str(uuid.uuid4())
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO calendar_events (
+                    id, student_id, topic, start_iso,
+                    duration_minutes, external_event_id, status
+                ) VALUES (?, ?, ?, ?, ?, NULL, 'suggested')
+                """,
+                (event_id, student_id, topic, start_iso, int(duration_minutes)),
+            )
+            connection.commit()
+        return {
+            "id": event_id,
+            "student_id": student_id,
+            "topic": topic,
+            "start_iso": start_iso,
+            "duration_minutes": int(duration_minutes),
+            "external_event_id": None,
+            "status": "suggested",
+        }
+
+    async def accept_calendar_event(
+        self,
+        student_id: str,
+        event_id: str,
+        external_event_id: str | None = None,
+    ) -> dict | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, topic, start_iso, duration_minutes, external_event_id, status
+                FROM calendar_events
+                WHERE id = ? AND student_id = ?
+                """,
+                (event_id, student_id),
+            ).fetchone()
+            if row is None:
+                return None
+            connection.execute(
+                """
+                UPDATE calendar_events
+                SET status = 'accepted',
+                    external_event_id = COALESCE(?, external_event_id)
+                WHERE id = ? AND student_id = ?
+                """,
+                (external_event_id, event_id, student_id),
+            )
+            connection.commit()
+            updated = connection.execute(
+                """
+                SELECT id, topic, start_iso, duration_minutes, external_event_id, status
+                FROM calendar_events
+                WHERE id = ?
+                """,
+                (event_id,),
+            ).fetchone()
+        item = dict(updated)
+        item["status"] = item.get("status") or "accepted"
+        return item
+
+    async def save_session_summary(self, summary: dict) -> dict:
+        summary_id = str(uuid.uuid4())
+        topics = summary.get("topics") or []
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO session_summaries (
+                    id, student_id, attempt_id, exam_id, exam_title,
+                    questions_visited, questions_attempted, questions_correct,
+                    topics_json, summary_text
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    summary_id,
+                    summary["student_id"],
+                    summary.get("attempt_id"),
+                    summary.get("exam_id"),
+                    summary.get("exam_title") or "",
+                    int(summary.get("questions_visited") or 0),
+                    int(summary.get("questions_attempted") or 0),
+                    int(summary.get("questions_correct") or 0),
+                    json.dumps(topics),
+                    summary.get("summary_text") or "",
+                ),
+            )
+            connection.commit()
+        return {
+            "id": summary_id,
+            "student_id": summary["student_id"],
+            "attempt_id": summary.get("attempt_id"),
+            "exam_id": summary.get("exam_id"),
+            "exam_title": summary.get("exam_title") or "",
+            "questions_visited": int(summary.get("questions_visited") or 0),
+            "questions_attempted": int(summary.get("questions_attempted") or 0),
+            "questions_correct": int(summary.get("questions_correct") or 0),
+            "topics": topics,
+            "summary_text": summary.get("summary_text") or "",
+            "created_at": _utc_now(),
+        }
+
+    async def list_session_summaries(self, student_id: str, limit: int = 12) -> list[dict]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM session_summaries
+                WHERE student_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (student_id, limit),
+            ).fetchall()
+        results = []
+        for row in rows:
+            item = dict(row)
+            try:
+                item["topics"] = json.loads(item.pop("topics_json") or "[]")
+            except json.JSONDecodeError:
+                item["topics"] = []
+                item.pop("topics_json", None)
+            results.append(item)
+        return results
 
     async def write_outbox_record(
         self,
@@ -301,22 +442,23 @@ class SQLiteRepositoryAdapter(RepositoryPort):
                 (record_id, event_type, json.dumps(payload)),
             )
             if event_type == "create_calendar_event":
-                connection.execute(
-                    """
-                    INSERT INTO calendar_events (
-                        id, student_id, topic, start_iso,
-                        duration_minutes, external_event_id
-                    ) VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        str(uuid.uuid4()),
-                        payload["student_id"],
-                        payload["topic"],
-                        payload["start_iso"],
-                        int(payload["duration_minutes"]),
-                        payload.get("external_event_id"),
-                    ),
-                )
+                if not payload.get("_skip_insert"):
+                    connection.execute(
+                        """
+                        INSERT INTO calendar_events (
+                            id, student_id, topic, start_iso,
+                            duration_minutes, external_event_id, status
+                        ) VALUES (?, ?, ?, ?, ?, ?, 'accepted')
+                        """,
+                        (
+                            str(uuid.uuid4()),
+                            payload["student_id"],
+                            payload["topic"],
+                            payload["start_iso"],
+                            int(payload["duration_minutes"]),
+                            payload.get("external_event_id"),
+                        ),
+                    )
             connection.commit()
 
     async def get_pending_outbox_records(self) -> list[dict]:
@@ -506,7 +648,124 @@ class SQLiteRepositoryAdapter(RepositoryPort):
             return None
         item = dict(row)
         item["answers"] = json.loads(item.pop("answers_json") or "[]")
+        raw_visited = item.pop("visited_json", None) or "[0]"
+        try:
+            item["visited"] = json.loads(raw_visited)
+        except json.JSONDecodeError:
+            item["visited"] = [0]
+        item["progress_index"] = int(item.get("progress_index") or 0)
+        item["questions_visited"] = int(item.get("questions_visited") or 1)
         return item
+
+    async def update_attempt_progress(
+        self,
+        attempt_id: str,
+        progress_index: int,
+        question_id: str | None = None,
+    ) -> dict | None:
+        """Remember last question + unique questions opened for resume/profile."""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM exam_attempts WHERE id = ?",
+                (attempt_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            current = dict(row)
+            try:
+                visited = set(json.loads(current.get("visited_json") or "[0]"))
+            except json.JSONDecodeError:
+                visited = {0}
+            # One marker per question — prefer id, else index token.
+            if question_id and question_id.strip():
+                marker: int | str = question_id.strip()
+            else:
+                marker = int(progress_index)
+            # Drop legacy numeric twin when we now have an id for this slot.
+            if isinstance(marker, str):
+                visited.discard(int(progress_index))
+                visited.discard(str(progress_index))
+            visited.add(marker)
+            visited_list = sorted(
+                visited,
+                key=lambda x: (0, x) if isinstance(x, int) else (1, str(x)),
+            )
+            connection.execute(
+                """
+                UPDATE exam_attempts
+                SET progress_index = ?,
+                    questions_visited = ?,
+                    visited_json = ?
+                WHERE id = ?
+                """,
+                (
+                    int(progress_index),
+                    len(visited),
+                    json.dumps(visited_list),
+                    attempt_id,
+                ),
+            )
+            connection.commit()
+            updated = connection.execute(
+                "SELECT * FROM exam_attempts WHERE id = ?",
+                (attempt_id,),
+            ).fetchone()
+        item = dict(updated)
+        item["answers"] = json.loads(item.pop("answers_json") or "[]")
+        item["visited"] = json.loads(item.pop("visited_json") or "[]")
+        item["progress_index"] = int(item.get("progress_index") or 0)
+        item["questions_visited"] = int(item.get("questions_visited") or 1)
+        return item
+
+    async def list_practice_progress(self, student_id: str) -> list[dict]:
+        """Open practice attempts with furthest position for profile resume cards."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    a.id AS attempt_id,
+                    a.exam_id,
+                    a.progress_index,
+                    a.questions_visited,
+                    a.started_at,
+                    a.completed_at,
+                    e.title AS exam_title,
+                    (
+                        SELECT COUNT(*) FROM exam_questions q WHERE q.exam_id = a.exam_id
+                    ) AS question_total
+                FROM exam_attempts a
+                JOIN exams e ON e.id = a.exam_id
+                WHERE a.student_id = ?
+                  AND a.mode = 'practice'
+                  AND a.completed_at IS NULL
+                ORDER BY a.started_at DESC
+                """,
+                (student_id,),
+            ).fetchall()
+        # One card per exam — keep the most recent open attempt.
+        seen: set[str] = set()
+        results: list[dict] = []
+        for row in rows:
+            exam_id = str(row["exam_id"])
+            if exam_id in seen:
+                continue
+            seen.add(exam_id)
+            total = int(row["question_total"] or 0)
+            idx = int(row["progress_index"] or 0)
+            visited = int(row["questions_visited"] or 1)
+            results.append(
+                {
+                    "attempt_id": str(row["attempt_id"]),
+                    "exam_id": exam_id,
+                    "exam_title": str(row["exam_title"] or "Practice exam"),
+                    "progress_index": idx,
+                    "question_number": min(idx + 1, max(total, 1)),
+                    "questions_visited": min(visited, total) if total else visited,
+                    "question_total": total,
+                    "started_at": str(row["started_at"] or ""),
+                }
+            )
+        return results
 
     async def complete_exam_attempt(
         self,

@@ -94,6 +94,50 @@ function Dashboard() {
         </p>
       </section>
 
+      {/* Resume practice — last stop point + questions moved */}
+      {p.practiceProgress.length > 0 && (
+        <section>
+          <h2 className="font-display text-xl text-primary">Continue where you left off</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Questions you’ve opened so far, and the question you’ll resume on.
+          </p>
+          <ul className="mt-5 space-y-3">
+            {p.practiceProgress.map((item) => {
+              const total = Math.max(item.questionTotal, 1);
+              const visited = Math.min(item.questionsVisited, total);
+              const pct = Math.round((visited / total) * 100);
+              return (
+                <li
+                  key={item.attemptId}
+                  className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[color:var(--hairline)] bg-card px-5 py-4"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium text-primary">{item.examTitle}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Stopped at Q{item.questionNumber} · {visited}/{total} questions visited
+                    </p>
+                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[color:var(--hairline)]">
+                      <div
+                        className="h-full rounded-full bg-[var(--amber)]"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                  <Link
+                    to="/exams/$examId"
+                    params={{ examId: item.examId }}
+                    search={{ mode: "practice" }}
+                    className="shrink-0 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground"
+                  >
+                    Resume Q{item.questionNumber}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
       {/* Focus + upcoming */}
       <section className="grid gap-10 md:grid-cols-2">
         <div>

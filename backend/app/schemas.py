@@ -64,6 +64,17 @@ class RecentSessionOut(BaseModel):
     date: str
 
 
+class PracticeProgressOut(BaseModel):
+    attempt_id: str
+    exam_id: str
+    exam_title: str
+    progress_index: int = 0
+    question_number: int = 1
+    questions_visited: int = 1
+    question_total: int = 0
+    started_at: str = ""
+
+
 class ProfileResponse(BaseModel):
     student_id: str
     name: str
@@ -77,6 +88,8 @@ class ProfileResponse(BaseModel):
     last_session_at: Optional[str] = None
     readiness_percent: int = 0
     recent_sessions: list[RecentSessionOut] = Field(default_factory=list)
+    practice_progress: list[PracticeProgressOut] = Field(default_factory=list)
+    session_summaries: list["SessionSummaryOut"] = Field(default_factory=list)
 
 
 class SettingsUpdateRequest(BaseModel):
@@ -94,6 +107,7 @@ class CalendarEventOut(BaseModel):
     start_iso: str
     duration_minutes: int
     external_event_id: Optional[str] = None
+    status: str = "suggested"
 
 
 class OpeningQuestion(BaseModel):
@@ -133,6 +147,62 @@ class HealthResponse(BaseModel):
 class ReportTriggerResponse(BaseModel):
     status: str = "ok"
     student_id: str
+    email_to: Optional[str] = None
+    report_preview: str = ""
+    calendar_suggestions: int = 0
+
+
+class SessionWrapUpEventIn(BaseModel):
+    question_id: str
+    topic: str = ""
+    student_answer_transcript: str = ""
+    was_correct: bool = False
+    agent_used: Literal["curriculum", "search", "youtube"] = "curriculum"
+
+
+class SessionWrapUpRequest(BaseModel):
+    attempt_id: Optional[str] = None
+    exam_id: Optional[str] = None
+    exam_title: str = ""
+    question_ids: list[str] = Field(default_factory=list)
+    events: list[SessionWrapUpEventIn] = Field(default_factory=list)
+    questions_visited: Optional[int] = None
+    persist_events: bool = True
+
+
+class SessionSummaryOut(BaseModel):
+    id: str
+    attempt_id: Optional[str] = None
+    exam_id: Optional[str] = None
+    exam_title: str = ""
+    questions_visited: int = 0
+    questions_attempted: int = 0
+    questions_correct: int = 0
+    topics: list[str] = Field(default_factory=list)
+    summary_text: str = ""
+    created_at: str = ""
+
+
+class CalendarRecommendationOut(BaseModel):
+    id: str
+    topic: str
+    start_iso: str
+    duration_minutes: int = 30
+    status: str = "suggested"
+    external_event_id: Optional[str] = None
+
+
+class SessionWrapUpResponse(BaseModel):
+    summary: SessionSummaryOut
+    recommendations: list[CalendarRecommendationOut] = Field(default_factory=list)
+    weak_topics: list[str] = Field(default_factory=list)
+    readiness_percent: int = 0
+    sessions_completed: int = 0
+
+
+class AcceptCalendarResponse(BaseModel):
+    status: str = "ok"
+    event: CalendarRecommendationOut
 
 
 # -- admin --------------------------------------------------------------------
@@ -233,6 +303,18 @@ class PracticeChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     mode: str | None = Field(default=None, description="practice | voice")
 
+
+class AttemptProgressRequest(BaseModel):
+    question_index: int = Field(ge=0, description="0-based question index")
+    question_id: str | None = None
+
+
+class AttemptProgressResponse(BaseModel):
+    attempt_id: str
+    progress_index: int
+    question_number: int
+    questions_visited: int
+    question_total: int = 0
 
 class PracticeChatVideo(BaseModel):
     title: str = ""
