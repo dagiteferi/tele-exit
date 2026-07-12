@@ -18,6 +18,7 @@ import {
   cleanSpeechTranscript,
   speechRecognitionSupported,
 } from "@/lib/speechListen";
+import { getCoachAvatar, getCoachPrefs, type CoachPrefs } from "@/lib/coachPrefs";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ReadinessRing } from "@/components/ReadinessRing";
 
@@ -128,6 +129,18 @@ function CallScreen() {
   const examTitle = handoff?.examTitle?.trim() || "Practice exam";
   const attemptId = handoff?.attemptId || "";
   const examId = handoff?.examId || "";
+
+  const [coachPrefs, setCoachPrefs] = useState<CoachPrefs>(() => getCoachPrefs());
+  const coach = useMemo(() => getCoachAvatar(coachPrefs.avatarId), [coachPrefs.avatarId]);
+
+  useEffect(() => {
+    const onPrefs = (e: Event) => {
+      const detail = (e as CustomEvent<CoachPrefs>).detail;
+      if (detail) setCoachPrefs(detail);
+    };
+    window.addEventListener("tele-exit-coach-prefs", onPrefs);
+    return () => window.removeEventListener("tele-exit-coach-prefs", onPrefs);
+  }, []);
 
   const [deck, setDeck] = useState<QuestionCard[]>(() => buildDeckFromHandoff(handoff));
   const deckRef = useRef(deck);
@@ -884,10 +897,10 @@ function CallScreen() {
             <ScreenShareIcon />
             <span className="font-medium text-primary">
               {sharePhase === "sharing"
-                ? "AI Coach is presenting their screen…"
+                ? `${coach.name} is presenting their screen…`
                 : sharedVideo
-                  ? `AI Coach is presenting · Q${question.index} + YouTube`
-                  : `AI Coach is presenting · Question ${question.index}`}
+                  ? `${coach.name} is presenting · Q${question.index} + YouTube`
+                  : `${coach.name} is presenting · Question ${question.index}`}
             </span>
           </div>
         </div>
@@ -925,11 +938,16 @@ function CallScreen() {
             <div className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[linear-gradient(165deg,#f7f4ee_0%,#f3efe6_50%,#ebe4d8_100%)]">
               {sharePhase === "joining" && (
                 <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-4 px-6 text-center">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--amber)]/20 font-display text-2xl text-[var(--amber-strong)]">
-                    AI
+                  <div
+                    className="flex h-16 w-16 items-center justify-center rounded-full font-display text-2xl text-white"
+                    style={{ background: coach.hue }}
+                  >
+                    {coach.initials}
                   </div>
                   <p className="font-display text-xl text-[#1c2430]">Connecting…</p>
-                  <p className="text-sm text-[#5b6573]">Your coach will present the exam next.</p>
+                  <p className="text-sm text-[#5b6573]">
+                    {coach.name} will present the exam next.
+                  </p>
                 </div>
               )}
 
@@ -1021,7 +1039,7 @@ function CallScreen() {
                           {sharedVideo.title || "YouTube video"}
                         </span>
                         <span className="shrink-0 rounded bg-white/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wider">
-                          Shared by AI
+                          Shared by {coach.name}
                         </span>
                       </div>
                       {youtubeEmbedId(sharedVideo.url) ? (
@@ -1132,10 +1150,15 @@ function CallScreen() {
               }
             >
               <div className="flex h-20 w-28 flex-col items-center justify-center md:h-24 md:w-36">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--amber)]/25 font-display text-base text-[var(--amber-strong)]">
-                  AI
+                <div
+                  className="flex h-9 w-9 items-center justify-center rounded-full font-display text-sm text-white"
+                  style={{ background: coach.hue }}
+                >
+                  {coach.initials}
                 </div>
-                <p className="mt-1 text-[10px] uppercase tracking-wider text-white/55">Coach</p>
+                <p className="mt-1 text-[10px] uppercase tracking-wider text-white/55">
+                  {coach.name}
+                </p>
               </div>
               {(speaking || coachBusy) && (
                 <p className="border-t border-white/10 bg-black/30 px-2 py-1 text-center text-[10px] text-[var(--amber-strong)]">
@@ -1179,7 +1202,10 @@ function CallScreen() {
                 </button>
               ) : (
                 <p
-                  className="max-w-xl rounded-lg bg-[#1c2430]/92 px-4 py-2 text-center text-sm leading-relaxed text-white shadow-lg"
+                  className={
+                    "max-w-xl rounded-lg bg-[#1c2430]/92 px-4 py-2 text-center leading-relaxed text-white shadow-lg " +
+                    (coachPrefs.captionsLarge ? "text-base md:text-lg" : "text-sm")
+                  }
                   aria-live="polite"
                 >
                   {captionText || "Listening…"}
@@ -1203,12 +1229,11 @@ function CallScreen() {
                 <span
                   className={
                     "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold " +
-                    (turn.who === "agent"
-                      ? "bg-[var(--amber)]/20 text-[var(--amber-strong)]"
-                      : "bg-secondary text-muted-foreground")
+                    (turn.who === "agent" ? "text-white" : "bg-secondary text-muted-foreground")
                   }
+                  style={turn.who === "agent" ? { background: coach.hue } : undefined}
                 >
-                  {turn.who === "agent" ? "AI" : "You"}
+                  {turn.who === "agent" ? coach.initials : "You"}
                 </span>
                 <span className={turn.who === "agent" ? "text-primary" : "text-foreground"}>
                   {turn.text}
