@@ -345,6 +345,26 @@ function ExamSessionPage() {
       }
       const call = await startStudyCall(attemptId, current.id);
       const q = call.question;
+      const deck = questions.map((item, i) => ({
+        id: item.id,
+        topic: item.topic,
+        text: item.questionText,
+        choices: item.choices ?? [],
+        index: i + 1,
+        total: questions.length,
+        referenceAnswer: item.referenceAnswer ?? null,
+      }));
+      // Prefer live call payload for the starting question (freshest bank fields).
+      if (deck[index]) {
+        deck[index] = {
+          ...deck[index],
+          id: q.id || deck[index].id,
+          topic: q.topic || deck[index].topic,
+          text: q.questionText || deck[index].text,
+          choices: q.choices ?? current.choices ?? deck[index].choices,
+          referenceAnswer: q.referenceAnswer ?? deck[index].referenceAnswer,
+        };
+      }
       // Keep the exact spoken welcome so chat + voice stay in sync.
       sessionStorage.setItem(
         CALL_HANDOFF_KEY,
@@ -357,15 +377,9 @@ function ExamSessionPage() {
           roomName: call.roomName,
           accessToken: call.accessToken,
           url: call.url,
-          question: {
-            id: q.id,
-            topic: q.topic,
-            text: q.questionText,
-            choices: q.choices ?? current.choices ?? [],
-            index: index + 1,
-            total: questions.length,
-            referenceAnswer: q.referenceAnswer,
-          },
+          questionIndex: index,
+          questions: deck,
+          question: deck[index],
           returnTo: `/exams/${examId}?mode=practice`,
         }),
       );
