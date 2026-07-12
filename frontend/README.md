@@ -6,6 +6,7 @@ Built with **TanStack Start**, **React**, **Vite**, and **Tailwind CSS**.
 
 | | |
 |---|---|
+| **Demo video** | [Tele-Exit-demo.mp4](https://drive.google.com/file/d/1DPe5VJwmOw3D7YBCDjs0hBf8bFsUuxpI/view?usp=sharing) |
 | **Live app** | https://tele-exit.vercel.app/ |
 | **API Swagger** | https://heavenonearth7-tele-exit-backend.hf.space/docs |
 

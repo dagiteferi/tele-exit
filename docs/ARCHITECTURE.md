@@ -142,7 +142,7 @@ Speech: Web Speech API (recognition + synthesis) with coach prefs from Settings.
 
 ## Related docs
 
-- [DEMO_GUIDE.md](DEMO_GUIDE.md) — rehearsal script  
+- [DEMO_GUIDE.md](DEMO_GUIDE.md) — rehearsal script · [recorded demo video](https://drive.google.com/file/d/1DPe5VJwmOw3D7YBCDjs0hBf8bFsUuxpI/view?usp=sharing)  
 - [API.md](API.md) — endpoints  
 - [ASSIGNMENT.md](ASSIGNMENT.md) — assignment mapping  
 - Backend Spec v3 — `docs/.specs/`

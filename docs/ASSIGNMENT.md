@@ -68,7 +68,9 @@ How **Tele-Exit** satisfies the **AI Automation Assignment – Full Stack AI Web
 
 | Item | Status |
 |------|--------|
-| Video: problem → design → UI demo → code walkthrough | Follow `docs/DEMO_GUIDE.md` |
+| Video: problem → design → UI demo → code walkthrough | [Tele-Exit demo video](https://drive.google.com/file/d/1DPe5VJwmOw3D7YBCDjs0hBf8bFsUuxpI/view?usp=sharing) · script in `docs/DEMO_GUIDE.md` |
+| Live app | https://tele-exit.vercel.app/ |
+| API docs | https://heavenonearth7-tele-exit-backend.hf.space/docs |
 | Source code | This repository |
 | Documentation | `README.md` + `docs/*` |
 | Send to kidus@brain3.ai | Per assignment instructions |

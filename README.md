@@ -19,6 +19,7 @@ Tele-Exit is a full-stack AI automation product that replaces fragmented exam pr
 
 | Surface | URL |
 |---------|-----|
+| **Demo video** | [Watch on Google Drive](https://drive.google.com/file/d/1DPe5VJwmOw3D7YBCDjs0hBf8bFsUuxpI/view?usp=sharing) |
 | **Web app** | [https://tele-exit.vercel.app/](https://tele-exit.vercel.app/) |
 | **API Swagger** | [https://heavenonearth7-tele-exit-backend.hf.space/docs](https://heavenonearth7-tele-exit-backend.hf.space/docs) |
 | **API health** | [https://heavenonearth7-tele-exit-backend.hf.space/health](https://heavenonearth7-tele-exit-backend.hf.space/health) |

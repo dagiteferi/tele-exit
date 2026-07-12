@@ -4,6 +4,7 @@ FastAPI service implementing Spec v3: auth, admin ingestion, field-filtered exam
 
 | | |
 |---|---|
+| **Demo video** | [Tele-Exit-demo.mp4](https://drive.google.com/file/d/1DPe5VJwmOw3D7YBCDjs0hBf8bFsUuxpI/view?usp=sharing) |
 | **Live Swagger** | https://heavenonearth7-tele-exit-backend.hf.space/docs |
 | **Live health** | https://heavenonearth7-tele-exit-backend.hf.space/health |
 | **HF Space** | https://huggingface.co/spaces/Heavenonearth7/tele-exit-backend |

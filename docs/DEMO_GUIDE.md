@@ -2,6 +2,12 @@
 
 Use this script for a live presentation or recorded submission video. Total runtime: **8–12 minutes**.
 
+## Recorded demo video
+
+**Watch:** [Tele-Exit demo (Google Drive)](https://drive.google.com/file/d/1DPe5VJwmOw3D7YBCDjs0hBf8bFsUuxpI/view?usp=sharing)
+
+Live app: https://tele-exit.vercel.app/ · API docs: https://heavenonearth7-tele-exit-backend.hf.space/docs
+
 ## Before you present
 
 | Check | Action |
