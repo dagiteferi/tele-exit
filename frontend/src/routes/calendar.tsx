@@ -124,8 +124,8 @@ function CalendarPage() {
           <p className="eyebrow">Calendar</p>
           <h1 className="mt-2 font-display text-3xl text-primary">Upcoming practice sessions</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Sessions the Planner books during a study call, plus AI suggestions after practice.
-            Accepted items stay here in Tele-Exit — and on Google Calendar when Google is connected.
+            Planner and wrap-up suggestions appear here as pending. Tap Accept to email a real
+            calendar invite to your account (and add to Google Calendar when the API is enabled).
           </p>
         </div>
         <button

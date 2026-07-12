@@ -45,7 +45,13 @@ async def test_voice_call_progress_uses_memory():
 
 @pytest.mark.asyncio
 async def test_voice_call_schedule_uses_planner():
-    calendar = FakeCalendar()
+    repo = FakeRepository(
+        {
+            "student_id": "s1",
+            "weak_topics": ["DP"],
+            "sessions_completed": 1,
+        }
+    )
     turn = await voice_call_turn(
         llm=FakeLLM(),
         search=FakeSearch(),
@@ -53,19 +59,15 @@ async def test_voice_call_schedule_uses_planner():
         student_id="s1",
         question=QUESTION,
         message="schedule me for tomorrow",
-        repo=FakeRepository(
-            {
-                "student_id": "s1",
-                "weak_topics": ["DP"],
-                "sessions_completed": 1,
-            }
-        ),
-        calendar=calendar,
+        repo=repo,
+        calendar=FakeCalendar(),
     )
     assert turn["agent_used"] == "planner"
     assert "DP" in turn["reply"]
+    assert "Accept" in turn["reply"]
     assert turn["scheduled"]
-    assert len(calendar.events) == 1
+    assert turn["scheduled"][0]["status"] == "suggested"
+    assert len(repo.calendar_suggestions) == 1
 
 
 @pytest.mark.asyncio

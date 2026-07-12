@@ -14,7 +14,7 @@ from tests.fakes import (
 
 
 @pytest.mark.asyncio
-async def test_schedule_weak_topics_creates_events_and_outbox():
+async def test_schedule_weak_topics_creates_suggestions_only():
     repo = FakeRepository()
     calendar = FakeCalendar()
     agent = PlannerAgent(repo, calendar, study_minutes=45)
@@ -24,8 +24,11 @@ async def test_schedule_weak_topics_creates_events_and_outbox():
         start_from=datetime(2026, 7, 11, 8, 0, 0),
     )
     assert len(created) == 3
-    assert len(calendar.events) == 3
-    assert len(repo.outbox) == 3
+    # Suggestions stay pending until the student clicks Accept.
+    assert all(item["status"] == "suggested" for item in created)
+    assert len(repo.calendar_suggestions) == 3
+    assert len(calendar.events) == 0
+    assert len(repo.outbox) == 0
     assert created[0]["duration_minutes"] == 45
     assert created[0]["topic"] == "Graphs"
     assert created[0]["start_iso"].startswith("2026-07-11T09:00:00")
@@ -49,8 +52,8 @@ async def test_handle_with_state_profile():
     result = await agent.handle(state)
     assert result.agent_used == "planner"
     assert "Sorting" in result.text
-    assert "tomorrow" in result.text
-    assert len(result.metadata["scheduled"]) == 1
+    assert "Accept" in result.text
+    assert result.metadata["scheduled"][0]["status"] == "suggested"
 
 
 @pytest.mark.asyncio
@@ -67,6 +70,7 @@ async def test_handle_falls_back_to_live_topic():
     assert result.agent_used == "planner"
     assert "Binary Trees" in result.text
     assert len(result.metadata["scheduled"]) == 1
+    assert result.metadata["scheduled"][0]["status"] == "suggested"
 
 
 @pytest.mark.asyncio

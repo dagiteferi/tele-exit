@@ -83,10 +83,12 @@ class PlannerAgent:
     def __init__(
         self,
         repository: RepositoryPort,
-        calendar: CalendarPort,
+        calendar: CalendarPort | None = None,
         study_minutes: int = DEFAULT_STUDY_MINUTES,
     ) -> None:
         self._repository = repository
+        # Kept for DI compatibility; Google Calendar is only written when the
+        # student clicks Accept on the Calendar page.
         self._calendar = calendar
         self._study_minutes = study_minutes
 
@@ -96,6 +98,7 @@ class PlannerAgent:
         weak_topics: list[str],
         start_from: datetime | None = None,
     ) -> list[dict]:
+        """Create suggested sessions — student must Accept them on Calendar."""
         if not student_id:
             raise ValueError("student_id is required")
 
@@ -108,21 +111,22 @@ class PlannerAgent:
         for index, topic in enumerate(topics):
             start = base if index == 0 else base + timedelta(days=index)
             start_iso = start.replace(hour=9, minute=0, second=0, microsecond=0).isoformat()
-            event_id = await self._calendar.create_study_event(
+            row = await self._repository.create_calendar_suggestion(
                 student_id=student_id,
                 topic=topic,
                 start_iso=start_iso,
                 duration_minutes=self._study_minutes,
             )
-            payload = {
-                "student_id": student_id,
-                "topic": topic,
-                "start_iso": start_iso,
-                "duration_minutes": self._study_minutes,
-                "external_event_id": event_id,
-            }
-            await self._repository.write_outbox_record("create_calendar_event", payload)
-            created.append(payload)
+            created.append(
+                {
+                    "id": row.get("id"),
+                    "student_id": student_id,
+                    "topic": topic,
+                    "start_iso": start_iso,
+                    "duration_minutes": self._study_minutes,
+                    "status": row.get("status") or "suggested",
+                }
+            )
         return created
 
     async def handle(self, state: AgentState) -> AgentResult:

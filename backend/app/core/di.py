@@ -84,22 +84,22 @@ def build_container(settings: Settings | None = None) -> AppContainer:
     settings = settings or get_settings()
 
     if settings.use_fakes:
+        # Local unit/integration tests only — never for demos.
         llm: LLMPort = FakeLLM()
         search: WebSearchPort = FakeSearch()
         video_search: VideoSearchPort = FakeVideoSearch()
         embedding: EmbeddingPort = FakeEmbedding()
-        # Still allow real SMTP in "fakes" mode when configured — useful for demos.
+        calendar: CalendarPort = FakeCalendar()
+        email: EmailPort = FakeEmail()
+        video_session: VideoSessionPort = FakeVideoSession()
+        # Allow real SMTP even under USE_FAKES when configured (rare hybrid demos).
         if settings.smtp_user.strip() and settings.smtp_password.strip():
-            calendar: CalendarPort = GoogleCalendarAdapter(
+            calendar = GoogleCalendarAdapter(
                 credentials_path=settings.google_credentials_path,
                 calendar_id=settings.google_calendar_id,
                 delegated_user=settings.google_delegated_user,
             )
-            email: EmailPort = _build_email(settings)
-        else:
-            calendar = FakeCalendar()
-            email = FakeEmail()
-        video_session: VideoSessionPort = FakeVideoSession()
+            email = _build_email(settings)
     else:
         llm = GeminiLLMAdapter(api_key=settings.gemini_api_key)
         search = TavilySearchAdapter(api_key=settings.tavily_api_key)

@@ -23,13 +23,16 @@ from app.schemas import HealthResponse
 
 
 class RuntimeHealthResponse(HealthResponse):
-    use_fakes: bool = True
+    use_fakes: bool = False
+    smtp_configured: bool = False
+    gemini_configured: bool = False
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.config import clear_settings_cache
     from app.ingestion.product_docs_pipeline import ensure_product_knowledge
+    import logging
 
     clear_settings_cache()
     settings = get_settings()
@@ -37,6 +40,12 @@ async def lifespan(app: FastAPI):
     app.state.container = container
     app.state.admin_id = await bootstrap_admin(container)
     app.state.product_chunks = await ensure_product_knowledge(container.product_knowledge)
+    logging.getLogger("uvicorn.error").info(
+        "Tele-Exit ready — use_fakes=%s smtp=%s gemini=%s",
+        settings.use_fakes,
+        bool(settings.smtp_user and settings.smtp_password),
+        bool(settings.gemini_api_key),
+    )
     yield
     reset_container()
     app.state.container = None
@@ -71,7 +80,12 @@ def create_app() -> FastAPI:
 
     @app.get("/health", response_model=RuntimeHealthResponse)
     async def health():
-        return RuntimeHealthResponse(use_fakes=get_settings().use_fakes)
+        s = get_settings()
+        return RuntimeHealthResponse(
+            use_fakes=s.use_fakes,
+            smtp_configured=bool(s.smtp_user.strip() and s.smtp_password.strip()),
+            gemini_configured=bool(s.gemini_api_key.strip()),
+        )
 
     return app
 
