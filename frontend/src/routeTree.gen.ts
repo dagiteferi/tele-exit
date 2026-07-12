@@ -11,9 +11,11 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SessionRecapRouteImport } from './routes/session-recap'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ProgressRouteImport } from './routes/progress'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as ExamsRouteImport } from './routes/exams'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CallRouteImport } from './routes/call'
@@ -33,6 +35,11 @@ const SessionRecapRoute = SessionRecapRouteImport.update({
   path: '/session-recap',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
@@ -46,6 +53,11 @@ const ProgressRoute = ProgressRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ExamsRoute = ExamsRouteImport.update({
@@ -95,9 +107,11 @@ export interface FileRoutesByFullPath {
   '/call': typeof CallRoute
   '/dashboard': typeof DashboardRoute
   '/exams': typeof ExamsRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/progress': typeof ProgressRoute
   '/register': typeof RegisterRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/session-recap': typeof SessionRecapRoute
   '/settings': typeof SettingsRoute
   '/admin/questions': typeof AdminQuestionsRoute
@@ -110,9 +124,11 @@ export interface FileRoutesByTo {
   '/call': typeof CallRoute
   '/dashboard': typeof DashboardRoute
   '/exams': typeof ExamsRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/progress': typeof ProgressRoute
   '/register': typeof RegisterRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/session-recap': typeof SessionRecapRoute
   '/settings': typeof SettingsRoute
   '/admin/questions': typeof AdminQuestionsRoute
@@ -126,9 +142,11 @@ export interface FileRoutesById {
   '/call': typeof CallRoute
   '/dashboard': typeof DashboardRoute
   '/exams': typeof ExamsRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/progress': typeof ProgressRoute
   '/register': typeof RegisterRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/session-recap': typeof SessionRecapRoute
   '/settings': typeof SettingsRoute
   '/admin/questions': typeof AdminQuestionsRoute
@@ -143,9 +161,11 @@ export interface FileRouteTypes {
     | '/call'
     | '/dashboard'
     | '/exams'
+    | '/forgot-password'
     | '/login'
     | '/progress'
     | '/register'
+    | '/reset-password'
     | '/session-recap'
     | '/settings'
     | '/admin/questions'
@@ -158,9 +178,11 @@ export interface FileRouteTypes {
     | '/call'
     | '/dashboard'
     | '/exams'
+    | '/forgot-password'
     | '/login'
     | '/progress'
     | '/register'
+    | '/reset-password'
     | '/session-recap'
     | '/settings'
     | '/admin/questions'
@@ -173,9 +195,11 @@ export interface FileRouteTypes {
     | '/call'
     | '/dashboard'
     | '/exams'
+    | '/forgot-password'
     | '/login'
     | '/progress'
     | '/register'
+    | '/reset-password'
     | '/session-recap'
     | '/settings'
     | '/admin/questions'
@@ -189,9 +213,11 @@ export interface RootRouteChildren {
   CallRoute: typeof CallRoute
   DashboardRoute: typeof DashboardRoute
   ExamsRoute: typeof ExamsRoute
+  ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
   ProgressRoute: typeof ProgressRoute
   RegisterRoute: typeof RegisterRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   SessionRecapRoute: typeof SessionRecapRoute
   SettingsRoute: typeof SettingsRoute
   AdminQuestionsRoute: typeof AdminQuestionsRoute
@@ -215,6 +241,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SessionRecapRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/register': {
       id: '/register'
       path: '/register'
@@ -234,6 +267,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/exams': {
@@ -301,9 +341,11 @@ const rootRouteChildren: RootRouteChildren = {
   CallRoute: CallRoute,
   DashboardRoute: DashboardRoute,
   ExamsRoute: ExamsRoute,
+  ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
   ProgressRoute: ProgressRoute,
   RegisterRoute: RegisterRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   SessionRecapRoute: SessionRecapRoute,
   SettingsRoute: SettingsRoute,
   AdminQuestionsRoute: AdminQuestionsRoute,

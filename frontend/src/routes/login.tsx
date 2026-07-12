@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { useAuth } from "@/lib/auth";
@@ -87,12 +87,12 @@ function LoginPage() {
             <label htmlFor="password" className="block text-sm font-medium text-primary">
               Password
             </label>
-            <a
-              href="#forgot-password"
+            <Link
+              to="/forgot-password"
               className="text-xs text-muted-foreground transition-colors hover:text-primary"
             >
               Forgot password?
-            </a>
+            </Link>
           </div>
           <PasswordInput
             id="password"

@@ -220,6 +220,24 @@ export async function loginStudent(email: string, password: string): Promise<{ u
   return { user, token: data.access_token };
 }
 
+/** Request a password-reset email (always succeeds with a generic message). */
+export async function requestPasswordReset(email: string): Promise<{ message: string }> {
+  const data = await apiFetch<{ message: string }>("/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+  return { message: data.message };
+}
+
+/** Set a new password using the token from the reset email. */
+export async function resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+  const data = await apiFetch<{ message: string }>("/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ token, new_password: newPassword }),
+  });
+  return { message: data.message };
+}
+
 export async function getMyProfile(): Promise<StudentProfile> {
   const data = await apiFetch<{
     student_id: string;

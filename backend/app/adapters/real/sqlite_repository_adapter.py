@@ -92,6 +92,67 @@ class SQLiteRepositoryAdapter(RepositoryPort):
             ).fetchone()
         return dict(row) if row else None
 
+    async def update_user_password(self, user_id: str, password_hash: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE users SET password_hash = ? WHERE id = ?",
+                (password_hash, user_id),
+            )
+            connection.commit()
+
+    async def create_password_reset_token(
+        self,
+        user_id: str,
+        token_hash: str,
+        expires_at: str,
+    ) -> str:
+        token_id = str(uuid.uuid4())
+        with self._connect() as connection:
+            # Invalidate unused prior tokens for this user
+            connection.execute(
+                """
+                UPDATE password_reset_tokens
+                SET used_at = CURRENT_TIMESTAMP
+                WHERE user_id = ? AND used_at IS NULL
+                """,
+                (user_id,),
+            )
+            connection.execute(
+                """
+                INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (token_id, user_id, token_hash, expires_at),
+            )
+            connection.commit()
+        return token_id
+
+    async def get_valid_password_reset_token(self, token_hash: str) -> dict | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM password_reset_tokens
+                WHERE token_hash = ?
+                  AND used_at IS NULL
+                  AND datetime(expires_at) > datetime('now')
+                """,
+                (token_hash,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    async def mark_password_reset_token_used(self, token_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE password_reset_tokens
+                SET used_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (token_id,),
+            )
+            connection.commit()
+
     async def get_profile(self, student_id: str) -> dict:
         with self._connect() as connection:
             user = connection.execute(
