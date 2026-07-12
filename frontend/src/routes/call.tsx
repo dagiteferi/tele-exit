@@ -5,6 +5,8 @@ import { getMyProfile } from "@/lib/api";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ReadinessRing } from "@/components/ReadinessRing";
 
+const CALL_HANDOFF_KEY = "tele-exit-practice-call";
+
 export const Route = createFileRoute("/call")({
   head: () => ({
     meta: [
@@ -29,27 +31,64 @@ interface QuestionCard {
   text: string;
 }
 
+interface PracticeCallHandoff {
+  examId?: string;
+  returnTo?: string;
+  roomName?: string;
+  question?: {
+    topic: string;
+    text: string;
+    index: number;
+    total: number;
+    referenceAnswer?: string | null;
+  };
+}
+
 type Turn = { id: string; who: "agent" | "you"; text: string };
 type Action = "thinking" | "searching-web" | "finding-video" | null;
+
+function readHandoff(): PracticeCallHandoff | null {
+  try {
+    const raw = sessionStorage.getItem(CALL_HANDOFF_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as PracticeCallHandoff;
+  } catch {
+    return null;
+  }
+}
 
 // -- screen ------------------------------------------------------------------
 
 function CallScreen() {
   const navigate = useNavigate();
   const profile = useQuery({ queryKey: ["profile"], queryFn: getMyProfile });
+  const handoff = useRef(readHandoff()).current;
 
   const [listening, setListening] = useState(false);
   const [action, setAction] = useState<Action>(null);
-  const [question, setQuestion] = useState<QuestionCard>({
-    index: 4,
-    total: 12,
-    topic: "Dynamic programming",
-    text: "Given an array of n integers, find the longest increasing subsequence. Walk me through your approach.",
-  });
-  const [transcript, setTranscript] = useState<Turn[]>([
-    { id: "t1", who: "agent", text: "So — what's the first thing you'd try?" },
-    { id: "t2", who: "you",   text: "Maybe brute force all subsequences?" },
-    { id: "t3", who: "agent", text: "Good instinct. What's the cost of that?" },
+  const [question, setQuestion] = useState<QuestionCard>(() =>
+    handoff?.question
+      ? {
+          index: handoff.question.index,
+          total: handoff.question.total,
+          topic: handoff.question.topic,
+          text: handoff.question.text,
+        }
+      : {
+          index: 1,
+          total: 1,
+          topic: "Study call",
+          text: "Walk me through how you’d approach this topic out loud.",
+        },
+  );
+  const [transcript, setTranscript] = useState<Turn[]>(() => [
+    {
+      id: "t1",
+      who: "agent",
+      text: handoff?.question
+        ? "Take your time — explain this question in your own words. I’ll guide you."
+        : "So — what's the first thing you'd try?",
+    },
   ]);
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
@@ -125,11 +164,19 @@ function CallScreen() {
 
   async function endCall() {
     stopCamera();
-    // TODO backend: POST /students/me/session/end with collected events
+    sessionStorage.removeItem(CALL_HANDOFF_KEY);
+    if (handoff?.examId) {
+      navigate({
+        to: "/exams/$examId",
+        params: { examId: handoff.examId },
+        search: { mode: "practice" },
+      });
+      return;
+    }
     navigate({ to: "/dashboard" });
   }
 
-  const readiness = profile.data?.readiness ?? 0.72;
+  const readiness = profile.data?.readiness ?? 0;
 
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">

@@ -1,9 +1,7 @@
 /**
  * Tele-Exit API client.
  *
- * Auth (register / login / me) talks to the real backend.
- * Other student/admin endpoints remain mocked until wired.
- *
+ * Student profile/calendar/settings and auth talk to the real backend.
  * Token is sent as `Authorization: Bearer <token>` only — never in URLs
  * or logs. Prefer the Vite `/api` proxy in local dev (same-origin).
  */
@@ -15,10 +13,6 @@ import { getStoredToken } from "./auth-storage";
 
 /** Base URL: `VITE_API_URL` or same-origin `/api` (Vite proxy → backend). */
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") || "/api";
-
-function sleep(ms: number) {
-  return new Promise<void>((r) => setTimeout(r, ms));
-}
 
 export function authHeader(token?: string | null): Record<string, string> {
   const t = token ?? getStoredToken();
@@ -146,47 +140,6 @@ export interface StudentProfile {
   reportFrequency: "weekly" | "monthly";
 }
 
-// -- mock data ---------------------------------------------------------------
-
-const MOCK_PROFILE: StudentProfile = {
-  user: {
-    id: "stu_1",
-    name: "Hanna Bekele",
-    email: "hanna@example.et",
-    role: "student",
-    fieldOfStudy: "Software Engineering",
-    examDate: new Date(Date.now() + 43 * 864e5).toISOString(),
-  },
-  examDate: new Date(Date.now() + 43 * 864e5).toISOString(),
-  fieldOfStudy: "Software Engineering",
-  readiness: 0.72,
-  topicScores: {
-    "Data structures": { topic: "Data structures", attempted: 48, correct: 28, accuracy: 0.58 },
-    "OS scheduling":    { topic: "OS scheduling",    attempted: 33, correct: 20, accuracy: 0.61 },
-    "Networking":       { topic: "Networking",       attempted: 41, correct: 26, accuracy: 0.64 },
-    "Databases":        { topic: "Databases",        attempted: 52, correct: 40, accuracy: 0.77 },
-    "Algorithms":       { topic: "Algorithms",       attempted: 60, correct: 47, accuracy: 0.78 },
-    "Software design":  { topic: "Software design",  attempted: 29, correct: 24, accuracy: 0.83 },
-  },
-  weakTopics: ["Data structures", "OS scheduling", "Networking"],
-  recentSessions: [
-    { id: "s1", topic: "Databases · Normalization", date: new Date(Date.now() - 1 * 864e5).toISOString(), correct: 8, attempted: 10 },
-    { id: "s2", topic: "OS · Deadlocks",            date: new Date(Date.now() - 4 * 864e5).toISOString(), correct: 5, attempted: 9 },
-    { id: "s3", topic: "Algorithms · DP intro",     date: new Date(Date.now() - 7 * 864e5).toISOString(), correct: 7, attempted: 10 },
-  ],
-  reportFrequency: "weekly",
-};
-
-const MOCK_CALENDAR: CalendarEvent[] = [
-  { id: "e1", topic: "Algorithms · Dynamic programming", scheduledAt: new Date(Date.now() + 2 * 864e5).toISOString(), durationMinutes: 45 },
-  { id: "e2", topic: "Databases · Query planning",       scheduledAt: new Date(Date.now() + 4 * 864e5).toISOString(), durationMinutes: 30 },
-  { id: "e3", topic: "Networking · Transport layer",     scheduledAt: new Date(Date.now() + 6 * 864e5).toISOString(), durationMinutes: 45 },
-  { id: "e4", topic: "OS · Memory management",           scheduledAt: new Date(Date.now() + 9 * 864e5).toISOString(), durationMinutes: 30 },
-  { id: "e5", topic: "Data structures · Trees",          scheduledAt: new Date(Date.now() + 12 * 864e5).toISOString(), durationMinutes: 45 },
-];
-
-// -- endpoints (mocked) ------------------------------------------------------
-
 export interface RegisterInput {
   name: string;
   email: string;
@@ -222,21 +175,95 @@ export async function loginStudent(email: string, password: string): Promise<{ u
 }
 
 export async function getMyProfile(): Promise<StudentProfile> {
-  await sleep(350);
-  // TODO backend: GET /students/me/profile
-  return MOCK_PROFILE;
+  const data = await apiFetch<{
+    student_id: string;
+    name: string;
+    email: string;
+    field_of_study?: string | null;
+    exam_date?: string | null;
+    report_frequency?: "weekly" | "monthly";
+    weak_topics: string[];
+    topic_scores: Record<string, { correct: number; attempted: number; accuracy: number }>;
+    sessions_completed: number;
+    last_session_at?: string | null;
+    readiness_percent: number;
+    recent_sessions?: {
+      id: string;
+      topic: string;
+      correct: number;
+      attempted: number;
+      date: string;
+    }[];
+  }>("/students/me/profile");
+
+  const topicScores: Record<string, TopicScore> = {};
+  for (const [topic, score] of Object.entries(data.topic_scores || {})) {
+    topicScores[topic] = {
+      topic,
+      correct: score.correct,
+      attempted: score.attempted,
+      accuracy: score.accuracy,
+    };
+  }
+
+  // Prefer server weak topics; else derive lowest-accuracy topics for the dashboard.
+  let weakTopics = [...(data.weak_topics || [])];
+  if (weakTopics.length === 0) {
+    weakTopics = Object.values(topicScores)
+      .filter((t) => t.attempted > 0)
+      .sort((a, b) => a.accuracy - b.accuracy)
+      .slice(0, 5)
+      .map((t) => t.topic);
+  }
+
+  return {
+    user: {
+      id: data.student_id,
+      name: data.name,
+      email: data.email,
+      role: "student",
+      fieldOfStudy: data.field_of_study ?? undefined,
+      examDate: data.exam_date ?? undefined,
+    },
+    examDate: data.exam_date || new Date(Date.now() + 30 * 864e5).toISOString(),
+    fieldOfStudy: data.field_of_study || "Your field",
+    readiness: Math.max(0, Math.min(1, (data.readiness_percent || 0) / 100)),
+    topicScores,
+    weakTopics,
+    recentSessions: (data.recent_sessions || []).map((s) => ({
+      id: s.id,
+      topic: s.topic,
+      date: s.date,
+      correct: s.correct,
+      attempted: s.attempted,
+    })),
+    reportFrequency: data.report_frequency === "monthly" ? "monthly" : "weekly",
+  };
 }
 
 export async function getMyCalendar(): Promise<CalendarEvent[]> {
-  await sleep(300);
-  // TODO backend: GET /students/me/calendar
-  return MOCK_CALENDAR;
+  const rows = await apiFetch<
+    {
+      id: string;
+      topic: string;
+      start_iso: string;
+      duration_minutes: number;
+      external_event_id?: string | null;
+    }[]
+  >("/students/me/calendar");
+  return rows.map((e) => ({
+    id: e.id,
+    topic: e.topic,
+    scheduledAt: e.start_iso,
+    durationMinutes: e.duration_minutes,
+  }));
 }
 
 export async function updateSettings(input: { reportFrequency: "weekly" | "monthly" }) {
-  await sleep(300);
-  // TODO backend: PATCH /students/me/settings
-  MOCK_PROFILE.reportFrequency = input.reportFrequency;
+  await apiFetch<{ status: string; report_frequency: string }>("/students/me/settings", {
+    method: "PATCH",
+    body: JSON.stringify({ report_frequency: input.reportFrequency }),
+  });
   return { ok: true };
 }
 

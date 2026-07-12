@@ -101,25 +101,31 @@ function Dashboard() {
           <p className="mt-1 text-sm text-muted-foreground">
             Where your accuracy is lowest right now.
           </p>
-          <ul className="mt-5 space-y-4">
-            {focusAreas.map((t) => (
-              <li key={t.topic}>
-                <div className="flex items-baseline justify-between text-sm">
-                  <span className="text-primary">{t.topic}</span>
-                  <span className="tabular-nums text-muted-foreground">
-                    {Math.round(t.accuracy * 100)}%
-                  </span>
-                </div>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[color:var(--hairline)]">
-                  <div
-                    className="h-full rounded-full bg-[var(--amber)]"
-                    style={{ width: `${Math.round(t.accuracy * 100)}%` }}
-                    aria-hidden
-                  />
-                </div>
-              </li>
-            ))}
-          </ul>
+          {focusAreas.length === 0 ? (
+            <p className="mt-5 text-sm text-muted-foreground">
+              No weak spots yet — practice an exam to see where to focus.
+            </p>
+          ) : (
+            <ul className="mt-5 space-y-4">
+              {focusAreas.map((t) => (
+                <li key={t.topic}>
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span className="text-primary">{t.topic}</span>
+                    <span className="tabular-nums text-muted-foreground">
+                      {Math.round(t.accuracy * 100)}%
+                    </span>
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[color:var(--hairline)]">
+                    <div
+                      className="h-full rounded-full bg-[var(--amber)]"
+                      style={{ width: `${Math.round(t.accuracy * 100)}%` }}
+                      aria-hidden
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <div>
