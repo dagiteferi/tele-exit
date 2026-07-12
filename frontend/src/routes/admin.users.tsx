@@ -4,6 +4,7 @@ import { useState } from "react";
 import { inviteAdmin, listAdminUsers } from "@/lib/api";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AdminShell } from "@/components/AdminShell";
+import { PasswordInput } from "@/components/AuthLayout";
 
 export const Route = createFileRoute("/admin/users")({
   head: () => ({
@@ -74,14 +75,14 @@ function UsersAdmin() {
             onChange={(e) => setForm({ ...form, email: e.target.value })}
             className="rounded border border-input bg-background px-3 py-2 text-sm"
           />
-          <input
+          <PasswordInput
             required
-            type="password"
             minLength={6}
             placeholder="Temporary password"
             value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })}
-            className="rounded border border-input bg-background px-3 py-2 text-sm"
+            className="w-full rounded border border-input bg-background px-3 py-2 text-sm pr-11"
+            autoComplete="new-password"
           />
           <button
             type="submit"

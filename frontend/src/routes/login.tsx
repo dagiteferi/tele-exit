@@ -7,6 +7,7 @@ import {
   AuthLayout,
   AuthSwitchLink,
   Field,
+  PasswordInput,
   authInputClass,
 } from "@/components/AuthLayout";
 
@@ -93,14 +94,12 @@ function LoginPage() {
               Forgot password?
             </a>
           </div>
-          <input
+          <PasswordInput
             id="password"
-            type="password"
             autoComplete="current-password"
             value={values.password}
             aria-invalid={Boolean(errors.password)}
             onChange={(e) => setValues({ ...values, password: e.target.value })}
-            className={authInputClass}
           />
           {errors.password && (
             <p role="alert" className="mt-1 text-xs text-destructive">

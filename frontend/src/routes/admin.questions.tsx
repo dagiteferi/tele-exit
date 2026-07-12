@@ -58,8 +58,8 @@ function ExamsAdmin() {
     setResult(null);
     setFileName(file.name);
     const ext = file.name.toLowerCase().split(".").pop();
-    if (!["csv", "json"].includes(ext ?? "")) {
-      setError("File must be .csv or .json.");
+    if (!["json"].includes(ext ?? "")) {
+      setError("Only .json files are allowed.");
       return;
     }
     if (file.size > 20 * 1024 * 1024) {
@@ -93,7 +93,7 @@ function ExamsAdmin() {
       <header>
         <h1 className="text-xl font-semibold text-primary">Exams & question bank</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Upload JSON/CSV exams scoped to a department. Students in that field will see them.
+          Upload JSON exam banks scoped to a department. Students in that field will see them.
         </p>
       </header>
 
@@ -157,17 +157,18 @@ function ExamsAdmin() {
             <input
               ref={inputRef}
               type="file"
-              accept=".csv,.json,application/json,text/csv"
+              accept=".json,application/json"
               className="sr-only"
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) void handleFile(f);
               }}
             />
-            <p className="text-primary">Drop a CSV or JSON file here, or click to choose</p>
+            <p className="text-primary">Drop a JSON file here, or click to choose</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              JSON: array of questions, or {"{ title, field_of_study, questions: [...] }"}. Fields: topic,
-              year, question, answer, choices (optional).
+              JSON only. Accepts exit-exam banks with department + courses[].questions (options /
+              correct_answer), or a flat questions array. Set Field to match student registration
+              (e.g. Software Engineering).
             </p>
             {fileName && <p className="mt-3 text-xs text-muted-foreground">Selected: {fileName}</p>}
           </label>
