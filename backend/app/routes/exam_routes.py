@@ -20,6 +20,7 @@ from app.schemas import (
     ExamQuestionOut,
     PracticeChatRequest,
     PracticeChatResponse,
+    PracticeChatSession,
     PracticeChatVideo,
     StartAttemptRequest,
     StartAttemptResponse,
@@ -309,6 +310,8 @@ async def practice_chat(
                 student_id=student_id,
                 question=question,
                 message=message,
+                repo=container.repo,
+                calendar=container.calendar,
             )
         except Exception:
             # Never 500 a live study call — keep the conversation moving.
@@ -319,6 +322,16 @@ async def practice_chat(
                 "video": None,
             }
         video = turn.get("video")
+        scheduled_raw = turn.get("scheduled") or []
+        scheduled = [
+            PracticeChatSession(
+                topic=str(item.get("topic") or ""),
+                start_iso=str(item.get("start_iso") or ""),
+                duration_minutes=int(item.get("duration_minutes") or 30),
+            )
+            for item in scheduled_raw
+            if isinstance(item, dict)
+        ]
         return PracticeChatResponse(
             reply=turn.get("reply") or "Let's keep going.",
             agent_used=turn.get("agent_used"),
@@ -326,6 +339,7 @@ async def practice_chat(
             video=PracticeChatVideo(**video)
             if isinstance(video, dict) and video.get("url")
             else None,
+            scheduled=scheduled,
         )
 
     try:

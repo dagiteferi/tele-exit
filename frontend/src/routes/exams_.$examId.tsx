@@ -3,8 +3,11 @@ import { useMutation } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import {
+  ApiError,
+  ensurePracticeAttempt,
   getExam,
   getMyProfile,
+  isAttemptAlive,
   practiceChat,
   saveAttemptProgress,
   startExamAttempt,
@@ -220,6 +223,20 @@ function ExamSessionPage() {
           );
           visited = Math.max(1, openProgress.questionsVisited);
         }
+
+        // Stale attempt IDs (DB reset / different account) must not block chat or calls.
+        const alive = await isAttemptAlive(
+          saved.attemptId,
+          resumeIndex,
+          questionsToUse[resumeIndex]?.id,
+        );
+        if (cancelled) return;
+        if (!alive) {
+          clearSession(examId, mode);
+          start.mutate();
+          return;
+        }
+
         setAttemptId(saved.attemptId);
         setQuestions(questionsToUse);
         setIndex(resumeIndex);
@@ -234,20 +251,28 @@ function ExamSessionPage() {
       // No local session — resume open practice attempt from profile.
       if (mode === "practice" && openProgress) {
         try {
-          const detail = await getExam(examId, "practice");
-          if (cancelled) return;
-          const qs = detail.questions;
-          if (qs.length) {
-            setAttemptId(openProgress.attemptId);
-            setQuestions(qs);
-            setIndex(Math.min(openProgress.progressIndex, qs.length - 1));
-            setAnswers({});
-            setRevealed({});
-            setChatByQuestion({});
-            setQuestionsVisited(Math.max(1, openProgress.questionsVisited));
-            setExamTitle(detail.exam.title || openProgress.examTitle || "this exam");
-            setBooting(false);
-            return;
+          const alive = await isAttemptAlive(
+            openProgress.attemptId,
+            openProgress.progressIndex,
+          );
+          if (!alive) {
+            // fall through to new attempt
+          } else {
+            const detail = await getExam(examId, "practice");
+            if (cancelled) return;
+            const qs = detail.questions;
+            if (qs.length) {
+              setAttemptId(openProgress.attemptId);
+              setQuestions(qs);
+              setIndex(Math.min(openProgress.progressIndex, qs.length - 1));
+              setAnswers({});
+              setRevealed({});
+              setChatByQuestion({});
+              setQuestionsVisited(Math.max(1, openProgress.questionsVisited));
+              setExamTitle(detail.exam.title || openProgress.examTitle || "this exam");
+              setBooting(false);
+              return;
+            }
           }
         } catch {
           // fall through to new attempt
@@ -367,7 +392,21 @@ function ExamSessionPage() {
       [qid]: [...(prev[qid] || []), { who: "you", text: msg }],
     }));
     try {
-      const res = await practiceChat(attemptId, qid, msg);
+      let liveAttemptId = attemptId;
+      let res;
+      try {
+        res = await practiceChat(liveAttemptId, qid, msg);
+      } catch (err) {
+        if (!(err instanceof ApiError) || err.status !== 404) throw err;
+        const ensured = await ensurePracticeAttempt(examId, liveAttemptId, {
+          questionIndex: index,
+          questionId: qid,
+        });
+        liveAttemptId = ensured.attemptId;
+        setAttemptId(liveAttemptId);
+        if (ensured.questions.length) setQuestions(ensured.questions);
+        res = await practiceChat(liveAttemptId, qid, msg);
+      }
       setChatBusy(false);
       await streamAiText(qid, res.reply || "Let's walk through this step by step.");
     } catch (err) {
@@ -427,75 +466,89 @@ function ExamSessionPage() {
   }
 
   async function onStudyCall() {
-    if (!attemptId || !current) return;
+    if (!attemptId || !current || callBusy) return;
 
-    // Speak first — must stay in the same turn as the button click or browsers mute it.
-    const titleGuess =
+    // Speak in the same click turn (browser autoplay), then heal a stale attempt
+    // before opening the call screen so chat/progress don't 404.
+    const title =
       examTitle && examTitle !== "this exam" ? examTitle : current.topic || "this exam";
-    const welcome = buildCallOpening(titleGuess, index + 1);
+    const welcome = buildCallOpening(title, index + 1);
     const startedAt = Date.now();
-    sessionStorage.setItem(SPEECH_STARTED_KEY, String(startedAt));
-    speakNow(welcome);
 
     setCallBusy(true);
     setError(null);
+    sessionStorage.setItem(SPEECH_STARTED_KEY, String(startedAt));
+    speakNow(welcome);
+
+    let liveAttemptId = attemptId;
+    let deckSource = questions;
     try {
-      let title = titleGuess;
-      if (!examTitle || examTitle === "this exam") {
-        try {
-          title = (await getExam(examId, "practice")).exam.title || titleGuess;
-          setExamTitle(title);
-        } catch {
-          // keep titleGuess
+      const ensured = await ensurePracticeAttempt(examId, attemptId, {
+        questionIndex: index,
+        questionId: current.id,
+      });
+      liveAttemptId = ensured.attemptId;
+      if (!ensured.reused) {
+        setAttemptId(liveAttemptId);
+        if (ensured.questions.length) {
+          deckSource = ensured.questions;
+          setQuestions(ensured.questions);
         }
       }
-      const call = await startStudyCall(attemptId, current.id);
-      const q = call.question;
-      const deck = questions.map((item, i) => ({
-        id: item.id,
-        topic: item.topic,
-        text: item.questionText,
-        choices: item.choices ?? [],
-        index: i + 1,
-        total: questions.length,
-        referenceAnswer: item.referenceAnswer ?? null,
-      }));
-      // Prefer live call payload for the starting question (freshest bank fields).
-      if (deck[index]) {
-        deck[index] = {
-          ...deck[index],
-          id: q.id || deck[index].id,
-          topic: q.topic || deck[index].topic,
-          text: q.questionText || deck[index].text,
-          choices: q.choices ?? current.choices ?? deck[index].choices,
-          referenceAnswer: q.referenceAnswer ?? deck[index].referenceAnswer,
-        };
-      }
-      // Keep the exact spoken welcome so chat + voice stay in sync.
-      sessionStorage.setItem(
-        CALL_HANDOFF_KEY,
-        JSON.stringify({
-          examId,
-          examTitle: title,
-          welcomeText: welcome,
-          speechStartedAt: startedAt,
-          attemptId,
-          roomName: call.roomName,
-          accessToken: call.accessToken,
-          url: call.url,
-          questionIndex: index,
-          questions: deck,
-          question: deck[index],
-          returnTo: `/exams/${examId}?mode=practice`,
-        }),
-      );
-      navigate({ to: "/call" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start study call");
-      sessionStorage.removeItem(SPEECH_STARTED_KEY);
-    } finally {
       setCallBusy(false);
+      setError(err instanceof Error ? err.message : "Could not start study call");
+      return;
     }
+
+    const deck = deckSource.map((item, i) => ({
+      id: item.id,
+      topic: item.topic,
+      text: item.questionText,
+      choices: item.choices ?? [],
+      index: i + 1,
+      total: deckSource.length,
+      referenceAnswer: item.referenceAnswer ?? null,
+    }));
+
+    sessionStorage.setItem(
+      CALL_HANDOFF_KEY,
+      JSON.stringify({
+        examId,
+        examTitle: title,
+        welcomeText: welcome,
+        speechStartedAt: startedAt,
+        attemptId: liveAttemptId,
+        questionIndex: index,
+        questions: deck,
+        question: deck[index],
+        returnTo: `/exams/${examId}?mode=practice`,
+      }),
+    );
+    navigate({ to: "/call" });
+
+    const enrichAttemptId = liveAttemptId;
+    const enrichQuestionId = current.id;
+    void (async () => {
+      try {
+        const call = await startStudyCall(enrichAttemptId, enrichQuestionId);
+        const raw = sessionStorage.getItem(CALL_HANDOFF_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        if (parsed.attemptId !== enrichAttemptId) return;
+        sessionStorage.setItem(
+          CALL_HANDOFF_KEY,
+          JSON.stringify({
+            ...parsed,
+            roomName: call.roomName,
+            accessToken: call.accessToken,
+            url: call.url,
+          }),
+        );
+      } catch {
+        // Local handoff is enough for the browser study call.
+      }
+    })();
   }
 
   if ((booting || start.isPending) && !questions.length) {

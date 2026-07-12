@@ -144,17 +144,13 @@ class GeminiLLMAdapter(LLMPort):
         return payload
 
     async def classify_intent(self, transcript: str) -> str:
-        prompt = (
-            "Classify the student intent as exactly one of: "
-            "curriculum, search, youtube.\n"
-            f"Transcript: {transcript}\n"
-            "Reply with only the label."
+        from app.domain.prompts import (
+            intent_classify_prompt,
+            parse_intent_label,
         )
-        raw = (await self.generate(prompt)).strip().lower()
-        for label in ("curriculum", "search", "youtube"):
-            if label in raw:
-                return label
-        return "curriculum"
+
+        raw = await self.generate(intent_classify_prompt(transcript))
+        return parse_intent_label(raw)
 
 
 def _extract_text(data: dict) -> str:

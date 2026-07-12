@@ -1,7 +1,15 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getExam, getMyProfile, practiceChat, saveAttemptProgress, wrapUpSession } from "@/lib/api";
+import {
+  ApiError,
+  getExam,
+  getMyProfile,
+  practiceChat,
+  saveAttemptProgress,
+  startExamAttempt,
+  wrapUpSession,
+} from "@/lib/api";
 import {
   buildCallOpening,
   buildJoiningLine,
@@ -9,6 +17,7 @@ import {
   buildShareLine,
   CALL_OPENING_CUES,
   speakNow,
+  stopAllSpeech,
   warmVoices,
 } from "@/lib/speech";
 import {
@@ -24,6 +33,9 @@ import { ReadinessRing } from "@/components/ReadinessRing";
 
 const CALL_HANDOFF_KEY = "tele-exit-practice-call";
 const SPEECH_STARTED_KEY = "tele-exit-call-speech-started";
+
+/** Tracks mounted CallScreen instances so Strict Mode remounts don’t kill welcome TTS. */
+let callScreenMounts = 0;
 
 export const Route = createFileRoute("/call")({
   head: () => ({
@@ -127,8 +139,10 @@ function CallScreen() {
   const profile = useQuery({ queryKey: ["profile"], queryFn: getMyProfile });
   const handoff = useRef(readHandoff()).current;
   const examTitle = handoff?.examTitle?.trim() || "Practice exam";
-  const attemptId = handoff?.attemptId || "";
   const examId = handoff?.examId || "";
+  const [attemptId, setAttemptId] = useState(handoff?.attemptId || "");
+  const attemptIdRef = useRef(attemptId);
+  attemptIdRef.current = attemptId;
 
   const [coachPrefs, setCoachPrefs] = useState<CoachPrefs>(() => getCoachPrefs());
   const coach = useMemo(() => getCoachAvatar(coachPrefs.avatarId), [coachPrefs.avatarId]);
@@ -227,6 +241,9 @@ function CallScreen() {
   const [findingVideo, setFindingVideo] = useState(false);
   const [talkingWhileMuted, setTalkingWhileMuted] = useState(false);
   const [videoSearchLabel, setVideoSearchLabel] = useState("Searching YouTube…");
+  const [plannedSessions, setPlannedSessions] = useState<
+    { topic: string; startIso: string; durationMinutes: number }[]
+  >([]);
 
   const welcomeText = useMemo(
     () => handoff?.welcomeText?.trim() || buildCallOpening(examTitle, question?.index ?? 1),
@@ -402,7 +419,8 @@ function CallScreen() {
       }
 
       const activeQuestionId = questionIdRef.current;
-      if (!attemptId || !activeQuestionId) {
+      let liveAttemptId = attemptIdRef.current;
+      if (!liveAttemptId || !activeQuestionId) {
         pushTurn("agent", "I lost the exam link — go back and start the study call again.");
         return;
       }
@@ -437,10 +455,37 @@ function CallScreen() {
       }, 12_000);
 
       try {
-        const res = await practiceChat(attemptId, activeQuestionId, msg, {
-          mode: "voice",
-          timeoutMs: 10_000,
-        });
+        const runChat = (id: string) =>
+          practiceChat(id, activeQuestionId, msg, {
+            mode: "voice",
+            timeoutMs: 10_000,
+          });
+
+        let res;
+        try {
+          res = await runChat(liveAttemptId);
+        } catch (err) {
+          // Stale attempt (account switch / DB reset) — mint a fresh one and retry once.
+          if (!(err instanceof ApiError) || err.status !== 404 || !examId) throw err;
+          const created = await startExamAttempt(examId, "practice");
+          liveAttemptId = created.attemptId;
+          attemptIdRef.current = liveAttemptId;
+          setAttemptId(liveAttemptId);
+          try {
+            const raw = sessionStorage.getItem(CALL_HANDOFF_KEY);
+            if (raw) {
+              const parsed = JSON.parse(raw) as PracticeCallHandoff;
+              sessionStorage.setItem(
+                CALL_HANDOFF_KEY,
+                JSON.stringify({ ...parsed, attemptId: liveAttemptId }),
+              );
+            }
+            patchPracticeSessionIndex(examId, liveAttemptId, cursorRef.current);
+          } catch {
+            // ignore
+          }
+          res = await runChat(liveAttemptId);
+        }
         // Ignore late replies if the student already jumped to another question.
         if (questionIdRef.current !== activeQuestionId) return;
 
@@ -454,6 +499,9 @@ function CallScreen() {
           setFindingVideo(false);
         } else if (wantsVideo) {
           setFindingVideo(false);
+        }
+        if (res.scheduled?.length) {
+          setPlannedSessions(res.scheduled);
         }
         if (coachConfirmsCorrect(clean) || lastCorrectRef.current) {
           lastCorrectRef.current = true;
@@ -490,7 +538,7 @@ function CallScreen() {
         }
       }
     },
-    [attemptId, deck, pushTurn],
+    [deck, examId, pushTurn],
   );
 
   const queueUserSpeech = useCallback((chunk: string) => {
@@ -546,7 +594,12 @@ function CallScreen() {
         // ignore
       }
     }, 2000);
-    return () => window.clearInterval(resume);
+    const onPageHide = () => stopAllSpeech();
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      window.clearInterval(resume);
+      window.removeEventListener("pagehide", onPageHide);
+    };
   }, []);
 
   // Opening: voice continues from Start click + Meet-like share animation.
@@ -642,10 +695,18 @@ function CallScreen() {
   }
 
   useEffect(() => {
+    callScreenMounts += 1;
     return () => {
+      callScreenMounts -= 1;
       listenRef.current?.stop();
       if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
+      cancelSpeakRef.current?.();
+      cancelSpeakRef.current = null;
       stopCamera();
+      // Defer so React Strict Mode remount can reclaim the instance before we silence TTS.
+      window.setTimeout(() => {
+        if (callScreenMounts === 0) stopAllSpeech();
+      }, 0);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -732,7 +793,8 @@ function CallScreen() {
     }
     // Barge-in: stop coach voice when you unmute.
     cancelSpeakRef.current?.();
-    if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+    cancelSpeakRef.current = null;
+    stopAllSpeech();
     setSpeaking(false);
 
     listenRef.current?.stop();
@@ -812,7 +874,9 @@ function CallScreen() {
   async function endCall() {
     stopListening();
     cancelSpeakRef.current?.();
-    window.speechSynthesis?.cancel();
+    cancelSpeakRef.current = null;
+    stopAllSpeech();
+    setSpeaking(false);
     const stopAt = cursorRef.current;
     const q = deckRef.current[stopAt];
     if (q?.id) visitedIdsRef.current.add(q.id);
@@ -890,6 +954,39 @@ function CallScreen() {
           End call
         </button>
       </header>
+
+      {plannedSessions.length > 0 && (
+        <div
+          role="status"
+          className="hairline-b flex shrink-0 flex-wrap items-center justify-between gap-3 bg-[var(--surface)] px-4 py-2.5 md:px-6"
+        >
+          <div className="min-w-0">
+            <p className="text-sm text-primary">
+              Planner saved {plannedSessions.length} session
+              {plannedSessions.length === 1 ? "" : "s"}
+            </p>
+            <p className="truncate text-xs text-muted-foreground">
+              {plannedSessions[0]?.topic}
+              {plannedSessions[0]?.startIso
+                ? ` · ${new Date(plannedSessions[0].startIso).toLocaleString(undefined, {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}`
+                : ""}
+            </p>
+          </div>
+          <Link
+            to="/calendar"
+            className="shrink-0 rounded-md border border-input px-3 py-1.5 text-xs font-medium text-primary hover:bg-secondary"
+            onClick={() => stopAllSpeech()}
+          >
+            Open Calendar
+          </Link>
+        </div>
+      )}
 
       {sharePhase !== "joining" && (
         <div className="meet-presenting-bar z-20 shrink-0 border-b border-hairline bg-secondary/70 px-4 py-2">

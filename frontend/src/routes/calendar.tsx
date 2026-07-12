@@ -124,8 +124,8 @@ function CalendarPage() {
           <p className="eyebrow">Calendar</p>
           <h1 className="mt-2 font-display text-3xl text-primary">Upcoming practice sessions</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            AI suggestions from your study sessions. Accept to save them in Tele-Exit — and on Google
-            Calendar when Google is connected.
+            Sessions the Planner books during a study call, plus AI suggestions after practice.
+            Accepted items stay here in Tele-Exit — and on Google Calendar when Google is connected.
           </p>
         </div>
         <button
@@ -167,7 +167,8 @@ function CalendarPage() {
 
       {groups.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Nothing scheduled yet — end a study call or finish practice to get AI recommendations.
+          Nothing scheduled yet — ask the coach to “schedule me for tomorrow” on a study call, or end
+          a session to get AI recommendations.
         </p>
       ) : (
         <div className="space-y-8">

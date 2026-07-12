@@ -33,6 +33,13 @@ async def test_route_requires_identity_and_transcript():
 
 
 @pytest.mark.asyncio
+async def test_classify_memory_and_planner_intents():
+    supervisor = Supervisor(FakeLLM())
+    assert await supervisor.classify("how am I doing?") is Intent.MEMORY
+    assert await supervisor.classify("schedule me for tomorrow") is Intent.PLANNER
+
+
+@pytest.mark.asyncio
 async def test_thinking_indicator():
     result = await Supervisor(FakeLLM()).thinking_indicator()
     assert result.action == "thinking"

@@ -92,6 +92,17 @@ function stopResumeKeepAlive() {
   }
 }
 
+/** Stop coach TTS everywhere (leave call, navigate away, failed start). */
+export function stopAllSpeech() {
+  stopResumeKeepAlive();
+  if (typeof window === "undefined" || !window.speechSynthesis) return;
+  try {
+    window.speechSynthesis.cancel();
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * Speak immediately from a click handler so browsers allow audio.
  * Uses Settings → coach voice / rate / pitch when available.
@@ -105,7 +116,7 @@ export function speakNow(
     return () => undefined;
   }
 
-  window.speechSynthesis.cancel();
+  stopAllSpeech();
   warmVoices();
 
   const prefs = getCoachPrefs();
@@ -116,28 +127,30 @@ export function speakNow(
   const voice = resolveCoachVoice(prefs);
   if (voice) utter.voice = voice;
 
+  let cancelled = false;
   utter.onstart = () => {
+    if (cancelled) return;
     startResumeKeepAlive();
     opts?.onStart?.();
   };
   utter.onend = () => {
     stopResumeKeepAlive();
-    opts?.onEnd?.();
+    if (!cancelled) opts?.onEnd?.();
   };
   utter.onerror = () => {
     stopResumeKeepAlive();
-    opts?.onEnd?.();
+    if (!cancelled) opts?.onEnd?.();
   };
 
   window.speechSynthesis.speak(utter);
   window.speechSynthesis.resume();
 
   return () => {
+    cancelled = true;
     utter.onstart = null;
     utter.onend = null;
     utter.onerror = null;
-    stopResumeKeepAlive();
-    window.speechSynthesis.cancel();
+    stopAllSpeech();
   };
 }
 
