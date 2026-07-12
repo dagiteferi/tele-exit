@@ -33,9 +33,10 @@ class SmtpEmailAdapter(EmailPort):
     ) -> None:
         self.host = host
         self.port = int(port)
-        self.username = username
-        self.password = password
-        self.from_email = from_email or username
+        self.username = username.strip()
+        # Gmail App Passwords are 16 chars; strip spaces/quotes from .env pastes.
+        self.password = (password or "").strip().strip('"').strip("'").replace(" ", "")
+        self.from_email = (from_email or username).strip()
         self.use_tls = use_tls
         self.outbox_dir = Path(outbox_dir)
         self.sent: list[dict] = []
