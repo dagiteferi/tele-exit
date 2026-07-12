@@ -111,8 +111,13 @@ function CallScreen() {
   const [cursor, setCursor] = useState(() =>
     Math.min(Math.max(handoff?.questionIndex ?? 0, 0), Math.max(deck.length - 1, 0)),
   );
+  const cursorRef = useRef(cursor);
+  cursorRef.current = cursor;
   const question = deck[cursor] || deck[0];
-  const questionId = question?.id || "";
+  const questionId = question?.id || `idx-${cursor}`;
+  const questionIdRef = useRef(questionId);
+  questionIdRef.current = questionId;
+  const goToQuestionRef = useRef<(nextCursor: number) => boolean>(() => false);
 
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(true);
@@ -126,15 +131,24 @@ function CallScreen() {
     description?: string;
   } | null>(null);
   const [findingVideo, setFindingVideo] = useState(false);
+  const [talkingWhileMuted, setTalkingWhileMuted] = useState(false);
+  const [videoSearchLabel, setVideoSearchLabel] = useState("Searching YouTube…");
 
   const welcomeText = useMemo(
     () => handoff?.welcomeText?.trim() || buildCallOpening(examTitle, question?.index ?? 1),
     [handoff?.welcomeText, examTitle, question?.index],
   );
 
-  const [transcript, setTranscript] = useState<Turn[]>([
-    { id: "t1", who: "agent", text: buildJoiningLine() },
-  ]);
+  const initialQid =
+    handoff?.questions?.[handoff.questionIndex ?? 0]?.id ||
+    handoff?.question?.id ||
+    questionId;
+
+  const [chatByQuestion, setChatByQuestion] = useState<Record<string, Turn[]>>(() => ({
+    [initialQid]: [{ id: "t1", who: "agent", text: buildJoiningLine() }],
+  }));
+  const transcript = chatByQuestion[questionId] || [];
+
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
 
@@ -147,21 +161,57 @@ function CallScreen() {
   const followUpRef = useRef("");
   const silenceTimerRef = useRef<number | null>(null);
   const replyLockRef = useRef(false);
+  const askCoachRef = useRef<(spoken: string) => Promise<void>>(async () => undefined);
+  const queueUserSpeechRef = useRef<(chunk: string) => void>(() => undefined);
 
-  const pushTurn = useCallback((who: "agent" | "you", text: string) => {
-    setTranscript((prev) => [...prev, { id: `t-${Date.now()}-${prev.length}`, who, text }]);
+  const pushTurn = useCallback((who: "agent" | "you", text: string, forQuestionId?: string) => {
+    const key = forQuestionId || questionIdRef.current || "q0";
+    setChatByQuestion((prev) => ({
+      ...prev,
+      [key]: [
+        ...(prev[key] || []),
+        { id: `t-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, who, text },
+      ],
+    }));
   }, []);
 
   const goToQuestion = useCallback(
     (nextCursor: number) => {
-      if (nextCursor < 0 || nextCursor >= deck.length || nextCursor === cursor) return;
+      if (nextCursor < 0 || nextCursor >= deck.length) return false;
+      if (nextCursor === cursorRef.current) return false;
+      const q = deck[nextCursor];
+      const qid = q.id || `idx-${nextCursor}`;
+      questionIdRef.current = qid;
+      cursorRef.current = nextCursor;
       setCursor(nextCursor);
       setSharedVideo(null);
       setFindingVideo(false);
       setSharePhase("shared");
-      const q = deck[nextCursor];
-      const line = `Okay — jumping to question ${q.index} of ${q.total}. Take a look at the shared screen.`;
-      pushTurn("agent", line);
+      followUpRef.current = "";
+      pendingSpeechRef.current = "";
+      setLiveCaption("");
+
+      const line = `Okay — now looking at question ${q.index} of ${q.total}. Ask me about this one on the shared screen.`;
+      setChatByQuestion((prev) => {
+        const existing = prev[qid] || [];
+        if (existing.length > 0) {
+          return {
+            ...prev,
+            [qid]: [
+              ...existing,
+              {
+                id: `t-jump-${Date.now()}`,
+                who: "agent",
+                text: line,
+              },
+            ],
+          };
+        }
+        return {
+          ...prev,
+          [qid]: [{ id: `t-open-${qid}`, who: "agent", text: line }],
+        };
+      });
       cancelSpeakRef.current?.();
       window.speechSynthesis?.cancel();
       setSpeaking(true);
@@ -169,20 +219,54 @@ function CallScreen() {
         onStart: () => setSpeaking(true),
         onEnd: () => setSpeaking(false),
       });
+      return true;
     },
-    [cursor, deck, pushTurn],
+    [deck],
   );
+  goToQuestionRef.current = goToQuestion;
 
   const askCoach = useCallback(
     async (spoken: string) => {
       const msg = spoken.trim();
       if (!msg) return;
       if (replyLockRef.current) {
-        // Don't drop the student mid-sentence — queue one follow-up.
         followUpRef.current = msg;
         return;
       }
-      if (!attemptId || !questionId) {
+
+      // Voice/chat navigation — agent actually changes the shared question.
+      const nav = detectQuestionNav(msg, cursorRef.current, deck.length);
+      if (nav) {
+        const fromId = questionIdRef.current;
+        pushTurn("you", msg, fromId);
+        if (nav.kind === "next" || nav.kind === "prev" || nav.kind === "goto") {
+          const target =
+            nav.kind === "next"
+              ? cursorRef.current + 1
+              : nav.kind === "prev"
+                ? cursorRef.current - 1
+                : nav.index;
+          const moved = goToQuestionRef.current(target);
+          if (!moved) {
+            const edge =
+              nav.kind === "next" || (nav.kind === "goto" && target >= deck.length)
+                ? "You're already on the last question — want a hint on this one instead?"
+                : nav.kind === "prev" || (nav.kind === "goto" && target < 0)
+                  ? "You're already on the first question. Want to dig into this one?"
+                  : "I couldn't jump there — try Previous / Next on the shared screen.";
+            pushTurn("agent", edge, questionIdRef.current);
+            cancelSpeakRef.current?.();
+            setSpeaking(true);
+            cancelSpeakRef.current = speakNow(forSpeech(edge), {
+              onEnd: () => setSpeaking(false),
+            });
+          }
+          return;
+        }
+      }
+
+      const activeQuestionId = questionIdRef.current;
+      if (!attemptId || !activeQuestionId) {
         pushTurn("agent", "I lost the exam link — go back and start the study call again.");
         return;
       }
@@ -190,12 +274,20 @@ function CallScreen() {
       replyLockRef.current = true;
       setCoachBusy(true);
       setLiveCaption("");
-      pushTurn("you", msg);
+      pushTurn("you", msg, activeQuestionId);
 
       const wantsVideo = /youtube|video|videos|watch|clip|tutorial/i.test(msg);
-      if (wantsVideo) setFindingVideo(true);
+      if (wantsVideo) {
+        setFindingVideo(true);
+        setSharedVideo(null);
+        setVideoSearchLabel("Searching YouTube…");
+        pushTurn(
+          "agent",
+          "On it — searching YouTube for a clip that matches this question…",
+          activeQuestionId,
+        );
+      }
 
-      // Watchdog: never leave the UI stuck in "thinking".
       const watchdog = window.setTimeout(() => {
         if (!replyLockRef.current) return;
         setCoachBusy(false);
@@ -204,22 +296,30 @@ function CallScreen() {
         pushTurn(
           "agent",
           "Nice try — I'm still with you. Say that again or tell me your next thought.",
+          activeQuestionId,
         );
       }, 12_000);
 
       try {
-        const res = await practiceChat(attemptId, questionId, msg, {
+        const res = await practiceChat(attemptId, activeQuestionId, msg, {
           mode: "voice",
           timeoutMs: 10_000,
         });
+        // Ignore late replies if the student already jumped to another question.
+        if (questionIdRef.current !== activeQuestionId) return;
+
         const clean = (
           res.reply || "Got it — tell me more about what you see on the shared screen."
         ).trim();
         if (res.video?.url) {
+          setVideoSearchLabel("Opening the best match…");
           setSharedVideo(res.video);
           setSharePhase("shared");
+          setFindingVideo(false);
+        } else if (wantsVideo) {
+          setFindingVideo(false);
         }
-        pushTurn("agent", clean);
+        pushTurn("agent", clean, activeQuestionId);
         cancelSpeakRef.current?.();
         setSpeaking(true);
         cancelSpeakRef.current = speakNow(forSpeech(clean), {
@@ -227,13 +327,14 @@ function CallScreen() {
           onEnd: () => setSpeaking(false),
         });
       } catch (err) {
+        if (questionIdRef.current !== activeQuestionId) return;
         const fallback =
           err instanceof Error && /timed out|timeout/i.test(err.message)
             ? "Nice try — that took a second. What’s your next thought on the shared question?"
             : err instanceof Error
               ? err.message
               : "I missed that — say it one more time.";
-        pushTurn("agent", fallback);
+        pushTurn("agent", fallback, activeQuestionId);
         setSpeaking(true);
         cancelSpeakRef.current = speakNow(forSpeech(fallback), {
           onEnd: () => setSpeaking(false),
@@ -246,28 +347,27 @@ function CallScreen() {
         const queued = followUpRef.current.trim();
         followUpRef.current = "";
         if (queued && queued !== msg) {
-          window.setTimeout(() => void askCoach(queued), 250);
+          window.setTimeout(() => void askCoachRef.current(queued), 250);
         }
       }
     },
-    [attemptId, questionId, pushTurn],
+    [attemptId, deck.length, pushTurn],
   );
 
-  const queueUserSpeech = useCallback(
-    (chunk: string) => {
-      pendingSpeechRef.current = `${pendingSpeechRef.current} ${chunk}`.trim();
-      setLiveCaption(pendingSpeechRef.current);
-      if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
-      // Short pause = end of turn, like a real conversation.
-      silenceTimerRef.current = window.setTimeout(() => {
-        const full = pendingSpeechRef.current.trim();
-        pendingSpeechRef.current = "";
-        setLiveCaption("");
-        if (full) void askCoach(full);
-      }, 700);
-    },
-    [askCoach],
-  );
+  const queueUserSpeech = useCallback((chunk: string) => {
+    pendingSpeechRef.current = `${pendingSpeechRef.current} ${chunk}`.trim();
+    setLiveCaption(pendingSpeechRef.current);
+    if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
+    silenceTimerRef.current = window.setTimeout(() => {
+      const full = pendingSpeechRef.current.trim();
+      pendingSpeechRef.current = "";
+      setLiveCaption("");
+      if (full) void askCoachRef.current(full);
+    }, 700);
+  }, []);
+
+  askCoachRef.current = askCoach;
+  queueUserSpeechRef.current = queueUserSpeech;
 
   useEffect(() => {
     warmVoices();
@@ -301,27 +401,15 @@ function CallScreen() {
     }
 
     const timers: ReturnType<typeof setTimeout>[] = [];
+    const startId = questionIdRef.current;
+    const startIndex = question?.index ?? 1;
     const runShare = () => {
       setSharePhase("sharing");
-      setTranscript((prev) => [
-        ...prev,
-        {
-          id: "t-share",
-          who: "agent",
-          text: buildShareLine(question.index),
-        },
-      ]);
+      pushTurn("agent", buildShareLine(startIndex), startId);
     };
     const runQuestion = () => {
       setSharePhase("shared");
-      setTranscript((prev) => [
-        ...prev.filter((t) => t.id !== "t-q"),
-        {
-          id: "t-q",
-          who: "agent",
-          text: buildReadyLine(question.index),
-        },
-      ]);
+      pushTurn("agent", buildReadyLine(startIndex), startId);
     };
 
     const shareDelay = Math.max(0, CALL_OPENING_CUES.sharingMs - elapsed);
@@ -394,12 +482,80 @@ function CallScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Detect speech while muted (Meet-style “you are muted”).
+  useEffect(() => {
+    const stream = streamRef.current;
+    if (!stream || listening || !cameraOn) {
+      setTalkingWhileMuted(false);
+      return;
+    }
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+
+    let cancelled = false;
+    let raf = 0;
+    let ctx: AudioContext | null = null;
+    let loudFrames = 0;
+
+    try {
+      ctx = new AudioCtx();
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.8;
+      source.connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+
+      const tick = () => {
+        if (cancelled) return;
+        analyser.getByteFrequencyData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i += 1) sum += data[i];
+        const avg = sum / data.length;
+        if (avg > 26) loudFrames += 1;
+        else loudFrames = Math.max(0, loudFrames - 2);
+        setTalkingWhileMuted(loudFrames >= 6);
+        raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+    } catch {
+      setTalkingWhileMuted(false);
+    }
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+      void ctx?.close();
+      setTalkingWhileMuted(false);
+    };
+  }, [listening, cameraOn]);
+
+  // Rotate YouTube search status copy while the agent is looking.
+  useEffect(() => {
+    if (!findingVideo) return;
+    const labels = [
+      "Searching YouTube…",
+      "Ranking study clips…",
+      "Picking the best match…",
+      "Opening on the shared screen…",
+    ];
+    let i = 0;
+    setVideoSearchLabel(labels[0]);
+    const timer = window.setInterval(() => {
+      i = (i + 1) % labels.length;
+      setVideoSearchLabel(labels[i]);
+    }, 900);
+    return () => window.clearInterval(timer);
+  }, [findingVideo]);
+
   // Scroll only the chat panel — never the shared-screen window / page.
   useEffect(() => {
     const el = chatScrollRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [transcript.length, liveCaption, coachBusy]);
+  }, [transcript.length, liveCaption, coachBusy, questionId]);
 
   function startListening() {
     if (!speechRecognitionSupported()) {
@@ -417,7 +573,7 @@ function CallScreen() {
         const pending = pendingSpeechRef.current;
         setLiveCaption(pending ? `${pending} ${text}`.trim() : text);
       },
-      onFinal: (text) => queueUserSpeech(text),
+      onFinal: (text) => queueUserSpeechRef.current(text),
       onError: (message) => setConnectionError(message),
     });
     listenRef.current.start();
@@ -436,7 +592,7 @@ function CallScreen() {
     pendingSpeechRef.current = "";
     setLiveCaption("");
     setListening(false);
-    if (leftover && !replyLockRef.current) void askCoach(leftover);
+    if (leftover) void askCoachRef.current(leftover);
   }
 
   async function toggleMic() {
@@ -608,26 +764,54 @@ function CallScreen() {
                   </div>
 
                   {findingVideo && (
-                    <div className="mb-5 rounded-xl border border-dashed border-black/15 bg-white/60 px-4 py-5 text-center">
-                      <p className="font-display text-base text-[#1c2430]">Finding a YouTube video…</p>
-                      <p className="mt-1 text-xs text-[#5b6573]">For question {question.index}</p>
+                    <div className="meet-share-in mb-5 overflow-hidden rounded-xl border border-black/10 bg-white shadow-sm">
+                      <div className="flex items-center gap-2 border-b border-black/10 bg-[#cc0000] px-3 py-2 text-white">
+                        <YouTubeIcon />
+                        <span className="text-xs font-semibold tracking-wide">YouTube</span>
+                        <span className="ml-auto text-[10px] uppercase tracking-wider text-white/80">
+                          Agent searching
+                        </span>
+                      </div>
+                      <div className="px-5 py-7 text-center">
+                        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[#cc0000]/10">
+                          <span className="relative flex h-3 w-3">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#cc0000] opacity-60" />
+                            <span className="relative inline-flex h-3 w-3 rounded-full bg-[#cc0000]" />
+                          </span>
+                        </div>
+                        <p className="font-display text-lg text-[#1c2430]">{videoSearchLabel}</p>
+                        <p className="mt-1 text-sm text-[#5b6573]">
+                          Looking up clips for Q{question.index}
+                          {question.topic ? ` · ${question.topic}` : ""}
+                        </p>
+                        <div className="mx-auto mt-5 h-1.5 w-48 overflow-hidden rounded-full bg-black/10">
+                          <div className="h-full w-3/5 animate-pulse rounded-full bg-[#cc0000]" />
+                        </div>
+                        <ul className="mx-auto mt-5 max-w-xs space-y-1.5 text-left text-[11px] text-[#5b6573]">
+                          <li className="flex items-center gap-2">
+                            <span className="h-1.5 w-1.5 rounded-full bg-[#cc0000]" /> Scanning YouTube results
+                          </li>
+                          <li className="flex items-center gap-2">
+                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#cc0000]/70" /> Matching this exam question
+                          </li>
+                          <li className="flex items-center gap-2">
+                            <span className="h-1.5 w-1.5 rounded-full bg-black/20" /> Will open the best clip here
+                          </li>
+                        </ul>
+                      </div>
                     </div>
                   )}
 
-                  {sharedVideo?.url && (
-                    <div className="mb-5 overflow-hidden rounded-xl border border-black/10 bg-white shadow-sm">
-                      <div className="flex items-center justify-between gap-2 border-b border-black/10 bg-[#f7f4ee] px-3 py-2">
-                        <p className="truncate text-xs font-medium text-[#1c2430]">
-                          {sharedVideo.title || "YouTube"}
-                        </p>
-                        <a
-                          href={sharedVideo.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="shrink-0 text-[11px] text-[var(--amber-strong)] underline-offset-2 hover:underline"
-                        >
-                          Open
-                        </a>
+                  {sharedVideo?.url && !findingVideo && (
+                    <div className="meet-share-in mb-5 overflow-hidden rounded-xl border border-black/10 bg-white shadow-sm">
+                      <div className="flex items-center gap-2 border-b border-black/10 bg-[#cc0000] px-3 py-2 text-white">
+                        <YouTubeIcon />
+                        <span className="min-w-0 flex-1 truncate text-xs font-semibold">
+                          {sharedVideo.title || "YouTube video"}
+                        </span>
+                        <span className="shrink-0 rounded bg-white/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wider">
+                          Shared by AI
+                        </span>
                       </div>
                       {youtubeEmbedId(sharedVideo.url) ? (
                         <div className="aspect-video w-full bg-black">
@@ -651,6 +835,17 @@ function CallScreen() {
                           </a>
                         </div>
                       )}
+                      <div className="flex items-center justify-between gap-2 border-t border-black/10 bg-[#f7f4ee] px-3 py-2 text-[11px] text-[#5b6573]">
+                        <span>Playing on the shared screen</span>
+                        <a
+                          href={sharedVideo.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[#cc0000] underline-offset-2 hover:underline"
+                        >
+                          Open
+                        </a>
+                      </div>
                     </div>
                   )}
 
@@ -728,28 +923,49 @@ function CallScreen() {
                   You
                 </div>
               )}
-              {listening && (
+              {listening ? (
                 <span className="absolute bottom-1 left-1 rounded bg-[var(--amber-strong)] px-1.5 py-0.5 text-[10px] text-white">
                   Mic on
+                </span>
+              ) : (
+                <span
+                  className={
+                    "absolute bottom-1 left-1 rounded px-1.5 py-0.5 text-[10px] text-white " +
+                    (talkingWhileMuted ? "bg-[var(--rust)]" : "bg-black/55")
+                  }
+                >
+                  {talkingWhileMuted ? "Muted!" : "Muted"}
                 </span>
               )}
             </div>
           </div>
 
-          {(captionText || listening) && (
+          {(talkingWhileMuted || captionText || listening) && (
             <div className="meet-caption-in pointer-events-none absolute inset-x-4 bottom-4 z-20 flex justify-center lg:bottom-5">
-              <p
-                className="max-w-xl rounded-lg bg-[#1c2430]/92 px-4 py-2 text-center text-sm leading-relaxed text-white shadow-lg"
-                aria-live="polite"
-              >
-                {captionText || "Listening…"}
-              </p>
+              {talkingWhileMuted && !listening ? (
+                <button
+                  type="button"
+                  onClick={() => void toggleMic()}
+                  className="pointer-events-auto max-w-xl rounded-lg bg-[var(--rust)] px-4 py-2.5 text-center text-sm font-medium leading-relaxed text-white shadow-lg"
+                >
+                  You are muted — tap to unmute
+                </button>
+              ) : (
+                <p
+                  className="max-w-xl rounded-lg bg-[#1c2430]/92 px-4 py-2 text-center text-sm leading-relaxed text-white shadow-lg"
+                  aria-live="polite"
+                >
+                  {captionText || "Listening…"}
+                </p>
+              )}
             </div>
           )}
         </section>
 
         <aside className="flex min-h-0 flex-col overflow-hidden border-t border-hairline bg-background lg:border-l lg:border-t-0">
-          <p className="eyebrow shrink-0 border-b border-hairline px-4 py-3">Call chat</p>
+          <p className="eyebrow shrink-0 border-b border-hairline px-4 py-3">
+            Call chat · Q{question?.index ?? "?"}
+          </p>
           <ol
             ref={chatScrollRef}
             className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-3 text-sm"
@@ -807,20 +1023,67 @@ function CallScreen() {
           </button>
           <div className="min-w-0 text-left text-xs text-muted-foreground">
             <p className="font-medium text-foreground">
-              {listening
-                ? "Unmuted — talk now"
-                : speaking
-                  ? "Coach speaking"
-                  : coachBusy
-                    ? "Coach thinking"
-                    : "Muted"}
+              {talkingWhileMuted && !listening
+                ? "You are muted"
+                : listening
+                  ? "Unmuted — talk now"
+                  : speaking
+                    ? "Coach speaking"
+                    : coachBusy
+                      ? findingVideo
+                        ? "Searching YouTube"
+                        : "Coach thinking"
+                      : "Muted"}
             </p>
-            <p className="truncate">Chat scrolls on the side · shared screen stays put</p>
+            <p className="truncate">
+              {talkingWhileMuted && !listening
+                ? "Unmute to be heard"
+                : "Chat scrolls on the side · shared screen stays put"}
+            </p>
           </div>
         </div>
       </footer>
     </div>
   );
+}
+
+function detectQuestionNav(
+  message: string,
+  _cursor: number,
+  total: number,
+): { kind: "next" } | { kind: "prev" } | { kind: "goto"; index: number } | null {
+  const t = message.toLowerCase().replace(/[?.!,]/g, " ").replace(/\s+/g, " ").trim();
+  if (!t) return null;
+
+  const numbered =
+    t.match(
+      /\b(?:go to|jump to|open|show|move to)\s+(?:question\s+|q\s*)?(\d+)\b/,
+    ) || t.match(/\b(?:question|q)\s*(\d+)\b/);
+  if (numbered) {
+    const n = Number(numbered[1]);
+    if (Number.isFinite(n) && n >= 1 && n <= total) return { kind: "goto", index: n - 1 };
+  }
+
+  if (
+    /\b(previous question|prev question|go back|go to the previous|last question|prior question)\b/.test(
+      t,
+    ) ||
+    /^(previous|prev|go back)$/.test(t)
+  ) {
+    return { kind: "prev" };
+  }
+
+  if (
+    /\b(next question|go to the next|move to the next|skip (this|ahead)|following question|next one)\b/.test(
+      t,
+    ) ||
+    /\b(can you |please )?(go |move |jump )?next\b/.test(t) ||
+    /^(next|next please|next one)$/.test(t)
+  ) {
+    return { kind: "next" };
+  }
+
+  return null;
 }
 
 function stripChoiceLetter(choice: string): string {
@@ -832,6 +1095,14 @@ function youtubeEmbedId(url: string): string | null {
     /(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/,
   );
   return m?.[1] ?? null;
+}
+
+function YouTubeIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className="shrink-0">
+      <path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31.5 31.5 0 0 0 0 12a31.5 31.5 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31.5 31.5 0 0 0 24 12a31.5 31.5 0 0 0-.5-5.8zM9.8 15.5v-7l6.2 3.5-6.2 3.5z" />
+    </svg>
+  );
 }
 
 function ScreenShareIcon({ className }: { className?: string }) {
