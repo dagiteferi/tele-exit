@@ -18,8 +18,15 @@ from app.routes import (
 from app.schemas import HealthResponse
 
 
+class RuntimeHealthResponse(HealthResponse):
+    use_fakes: bool = True
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.config import clear_settings_cache
+
+    clear_settings_cache()
     settings = get_settings()
     container = build_container(settings)
     app.state.container = container
@@ -30,6 +37,9 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    from app.config import clear_settings_cache
+
+    clear_settings_cache()
     settings = get_settings()
     app = FastAPI(
         title=settings.app_name,
@@ -42,9 +52,9 @@ def create_app() -> FastAPI:
     app.include_router(report_router)
     app.include_router(ws_router)
 
-    @app.get("/health", response_model=HealthResponse)
+    @app.get("/health", response_model=RuntimeHealthResponse)
     async def health():
-        return HealthResponse()
+        return RuntimeHealthResponse(use_fakes=get_settings().use_fakes)
 
     return app
 

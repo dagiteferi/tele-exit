@@ -4,6 +4,7 @@ from fastapi import (
     HTTPException,
     status,
 )
+from fastapi.security import OAuth2PasswordRequestForm
 
 from app.auth.dependencies import get_current_student_id
 from app.auth.security import (
@@ -24,6 +25,21 @@ from app.schemas import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+async def _authenticate(
+    email: str,
+    password: str,
+    container: AppContainer,
+) -> LoginResponse:
+    user = await container.repo.get_user_by_email(email)
+    if user is None or not verify_password(password, user["password_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+    token = create_access_token(user["id"], role=user.get("role", "student"))
+    return LoginResponse(access_token=token)
 
 
 @router.post("/register", response_model=RegisterResponse)
@@ -56,14 +72,17 @@ async def login(
     body: LoginRequest,
     container: AppContainer = Depends(get_container),
 ):
-    user = await container.repo.get_user_by_email(str(body.email))
-    if user is None or not verify_password(body.password, user["password_hash"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
-        )
-    token = create_access_token(user["id"], role=user.get("role", "student"))
-    return LoginResponse(access_token=token)
+    """JSON login body: {email, password}."""
+    return await _authenticate(str(body.email), body.password, container)
+
+
+@router.post("/token", response_model=LoginResponse)
+async def login_token(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    container: AppContainer = Depends(get_container),
+):
+    """Swagger Authorize form — put email in the username field."""
+    return await _authenticate(form_data.username, form_data.password, container)
 
 
 @router.get("/me", response_model=MeResponse)

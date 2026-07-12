@@ -84,11 +84,16 @@ async def session_start(
     profile = await container.repo.get_profile(student_id)
     weak_topics = list(profile.get("weak_topics") or [])
     topic_hint = weak_topics[0] if weak_topics else "exam preparation"
-    matches = await container.vector_store.query(
-        topic_hint,
-        container.embedding,
-        top_k=1,
-    )
+    matches: list[dict] = []
+    try:
+        matches = await container.vector_store.query(
+            topic_hint,
+            container.embedding,
+            top_k=1,
+        )
+    except Exception:
+        matches = []
+
     if matches:
         match = matches[0]
         opening = OpeningQuestion(

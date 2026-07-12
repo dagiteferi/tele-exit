@@ -11,7 +11,7 @@ from app.auth.security import (
     decode_token_payload,
 )
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
 async def get_current_student_id(token: str = Depends(oauth2_scheme)) -> str:

@@ -39,9 +39,14 @@ dmypy.json
 .env.*
 !.env.example
 credentials/
+**/credentials/**
 *.pem
 *.key
 google_service_account.json
+*service-account*.json
+*service_account*.json
+gen-lang-client-*.json
+client_secret*.json
 
 # Local databases / runtime data
 *.db
