@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from dataclasses import (
     dataclass,
@@ -128,9 +129,20 @@ async def ingest_questions(
     exam_id: str | None = None,
     field_of_study: str | None = None,
     default_year: int | None = None,
+    embed_mode: str = "fast",
+    concurrency: int = 16,
 ) -> IngestResult:
-    """Embed and store exam questions. Skips invalid rows with error details."""
+    """
+    Embed and store exam questions.
+
+    embed_mode:
+      - "fast": local hash embedding (instant — preferred for bulk exam upload)
+      - "api": call embedding_port (slower; Gemini etc.)
+    """
+    from app.ingestion.fast_embed import fast_embed
+
     result = IngestResult()
+    prepared: list[ExamQuestion] = []
 
     for index, raw in enumerate(raw_questions, start=1):
         try:
@@ -140,21 +152,45 @@ async def ingest_questions(
                 default_year=default_year,
                 field_of_study=field_of_study,
             )
-            question = ExamQuestion(
-                id=str(uuid.uuid4()),
-                topic=validated["topic"],
-                year=validated["year"],
-                question_text=validated["question_text"],
-                reference_answer=validated["reference_answer"],
-                exam_id=exam_id,
-                field_of_study=validated.get("field_of_study") or field_of_study,
-                choices=validated.get("choices"),
+            prepared.append(
+                ExamQuestion(
+                    id=str(uuid.uuid4()),
+                    topic=validated["topic"],
+                    year=validated["year"],
+                    question_text=validated["question_text"],
+                    reference_answer=validated["reference_answer"],
+                    exam_id=exam_id,
+                    field_of_study=validated.get("field_of_study") or field_of_study,
+                    choices=validated.get("choices"),
+                )
             )
-            embedding = await embedding_port.embed(question.question_text)
-            await vector_store_adapter.store(question, embedding)
-            result.ingested += 1
         except Exception as exc:
             result.skipped += 1
             result.errors.append(str(exc))
+
+    if not prepared:
+        return result
+
+    sem = asyncio.Semaphore(max(1, concurrency))
+
+    async def _store_one(question: ExamQuestion) -> None:
+        async with sem:
+            if embed_mode == "api":
+                embedding = await embedding_port.embed(question.question_text)
+            else:
+                # Offload CPU hash embed to a thread so the event loop stays responsive
+                embedding = await asyncio.to_thread(fast_embed, question.question_text)
+            await vector_store_adapter.store(question, embedding)
+
+    outcomes = await asyncio.gather(
+        *[_store_one(q) for q in prepared],
+        return_exceptions=True,
+    )
+    for question, outcome in zip(prepared, outcomes):
+        if isinstance(outcome, Exception):
+            result.skipped += 1
+            result.errors.append(f"{question.topic}: {outcome}")
+        else:
+            result.ingested += 1
 
     return result

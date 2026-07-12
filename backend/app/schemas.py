@@ -180,6 +180,8 @@ class ExamUploadResponse(BaseModel):
     ingested: int
     skipped: int = 0
     errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    question_count: int = 0
 
 
 class StartAttemptRequest(BaseModel):

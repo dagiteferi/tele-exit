@@ -38,6 +38,16 @@ async function parseErrorMessage(res: Response): Promise<string> {
     const data = await res.json();
     const detail = data?.detail;
     if (typeof detail === "string") return detail;
+    if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+      const message = typeof detail.message === "string" ? detail.message : "Upload rejected";
+      const errors = Array.isArray(detail.errors) ? detail.errors.filter((e: unknown) => typeof e === "string") : [];
+      if (errors.length) {
+        const shown = errors.slice(0, 12).join("\n• ");
+        const more = errors.length > 12 ? `\n…and ${errors.length - 12} more` : "";
+        return `${message}\n• ${shown}${more}`;
+      }
+      return message;
+    }
     if (Array.isArray(detail)) {
       return detail
         .map((d: { msg?: string }) => d?.msg)
@@ -281,6 +291,8 @@ export interface IngestResult {
   ingested: number;
   skipped: number;
   errors: { row: number; message: string }[];
+  warnings?: string[];
+  questionCount?: number;
 }
 
 function mapExam(e: {
@@ -421,6 +433,8 @@ export async function uploadExam(input: {
     ingested: number;
     skipped: number;
     errors: string[];
+    warnings?: string[];
+    question_count?: number;
   };
   return {
     examId: data.exam_id,
@@ -429,6 +443,8 @@ export async function uploadExam(input: {
     ingested: data.ingested,
     skipped: data.skipped,
     errors: (data.errors || []).map((message, i) => ({ row: i + 1, message })),
+    warnings: data.warnings || [],
+    questionCount: data.question_count,
   };
 }
 

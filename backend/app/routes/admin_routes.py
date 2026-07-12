@@ -15,6 +15,7 @@ from app.core.di import (
     get_container,
 )
 from app.ingestion.embedding_pipeline import ingest_questions
+from app.ingestion.exam_validator import validate_exam_payload
 from app.ingestion.question_parser import (
     extract_questions_payload,
     parse_uploaded_file,
@@ -108,7 +109,6 @@ async def upload_exam(
     content = await file.read()
     try:
         parsed = parse_uploaded_file(file.filename, content)
-        questions, meta = extract_questions_payload(parsed)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as exc:
@@ -116,6 +116,27 @@ async def upload_exam(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Failed to parse upload: {exc}",
         ) from exc
+
+    # Strict correctness check BEFORE any DB write
+    validation = validate_exam_payload(parsed, filename=file.filename)
+    if not validation.ok:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "message": (
+                    f"Exam data failed validation "
+                    f"({len(validation.errors)} error(s)). Fix the JSON before uploading."
+                ),
+                "errors": validation.errors[:80],
+                "warnings": validation.warnings[:40],
+                "question_count": validation.question_count,
+            },
+        )
+
+    try:
+        questions, meta = extract_questions_payload(parsed)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     exam_title = (title or meta.get("title") or "").strip() or (
         (file.filename or "Exam").rsplit(".", 1)[0]
@@ -130,7 +151,7 @@ async def upload_exam(
     exam_year = year
     if exam_year is None and meta.get("year") is not None:
         try:
-            exam_year = int(meta["year"])
+            exam_year = int(str(meta["year"]).strip().split(".")[0])
         except (TypeError, ValueError):
             exam_year = None
 
@@ -149,6 +170,8 @@ async def upload_exam(
         exam_id=exam_id,
         field_of_study=exam_field,
         default_year=exam_year,
+        embed_mode="fast",
+        concurrency=24,
     )
     return ExamUploadResponse(
         exam_id=exam_id,
@@ -157,6 +180,8 @@ async def upload_exam(
         ingested=result.ingested,
         skipped=result.skipped,
         errors=result.errors,
+        warnings=validation.warnings,
+        question_count=validation.question_count,
     )
 
 
@@ -197,6 +222,20 @@ async def upload_questions_legacy(
     content = await file.read()
     try:
         parsed = parse_uploaded_file(file.filename, content)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    validation = validate_exam_payload(parsed, filename=file.filename)
+    if not validation.ok:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "message": f"Exam data failed validation ({len(validation.errors)} error(s)).",
+                "errors": validation.errors[:80],
+            },
+        )
+
+    try:
         questions, meta = extract_questions_payload(parsed)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -206,7 +245,7 @@ async def upload_questions_legacy(
     exam_year = year
     if exam_year is None and meta.get("year") is not None:
         try:
-            exam_year = int(meta["year"])
+            exam_year = int(str(meta["year"]).strip().split(".")[0])
         except (TypeError, ValueError):
             exam_year = None
 
@@ -224,6 +263,8 @@ async def upload_questions_legacy(
         exam_id=exam_id,
         field_of_study=exam_field,
         default_year=exam_year,
+        embed_mode="fast",
+        concurrency=24,
     )
     return UploadResponse(
         ingested=result.ingested,
