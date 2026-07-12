@@ -335,3 +335,22 @@ class StudyCallResponse(BaseModel):
     access_token: str
     url: Optional[str] = None
     question: ExamQuestionOut
+
+
+class SupportChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    use_web: bool | None = Field(
+        default=None,
+        description="Force web search supplement; omit to auto-detect",
+    )
+
+
+class SupportChatSource(BaseModel):
+    title: str = ""
+    source: str = ""
+
+
+class SupportChatResponse(BaseModel):
+    reply: str
+    agent_used: str | None = None
+    sources: list[SupportChatSource] = Field(default_factory=list)

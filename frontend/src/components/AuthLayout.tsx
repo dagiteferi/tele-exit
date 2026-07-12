@@ -1,11 +1,7 @@
 import { Link } from "@tanstack/react-router";
-import { lazy, Suspense, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
-
-const ChatbotWidget = lazy(() =>
-  import("@/components/ChatbotWidget").then((m) => ({ default: m.ChatbotWidget })),
-);
 
 export const authInputClass =
   "block w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground transition-colors hover:border-primary/30 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/25 aria-[invalid=true]:border-destructive aria-[invalid=true]:focus:ring-destructive/25";
@@ -141,9 +137,6 @@ export function AuthLayout({
       </div>
 
       <SiteFooter />
-      <Suspense fallback={null}>
-        <ChatbotWidget />
-      </Suspense>
     </div>
   );
 }

@@ -64,21 +64,37 @@ class GeminiLLMAdapter(LLMPort):
             raise last_error
         return ""
 
+    async def stream_generate(self, prompt: str, system: str = ""):
+        """Yield text deltas from Gemini streamGenerateContent (SSE)."""
+        last_error: Exception | None = None
+        for model in self.models:
+            try:
+                async for delta in self._stream_once(model, prompt, system):
+                    yield delta
+                return
+            except httpx.HTTPStatusError as exc:
+                last_error = exc
+                status = exc.response.status_code
+                logger.warning("Gemini stream %s failed (%s)", model, status)
+                if status == 429:
+                    await asyncio.sleep(0.15)
+                    continue
+                if status in {400, 403, 404, 503}:
+                    continue
+                continue
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                last_error = exc
+                logger.warning("Gemini stream %s transport error: %s", model, exc)
+                continue
+        if last_error:
+            raise last_error
+
     async def _generate_once(self, model: str, prompt: str, system: str) -> str:
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
             f"{model}:generateContent"
         )
-        payload: dict = {
-            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "temperature": 0.35,
-                "maxOutputTokens": 120,
-            },
-        }
-        if system.strip():
-            payload["systemInstruction"] = {"parts": [{"text": system.strip()}]}
-
+        payload = self._payload(prompt, system, max_tokens=160)
         response = await self._client.post(
             url,
             params={"key": self.api_key},
@@ -86,6 +102,46 @@ class GeminiLLMAdapter(LLMPort):
         )
         response.raise_for_status()
         return _extract_text(response.json())
+
+    async def _stream_once(self, model: str, prompt: str, system: str):
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{model}:streamGenerateContent"
+        )
+        payload = self._payload(prompt, system, max_tokens=220)
+        async with self._client.stream(
+            "POST",
+            url,
+            params={"key": self.api_key, "alt": "sse"},
+            json=payload,
+            timeout=httpx.Timeout(20.0, connect=4.0),
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                raw = line[5:].strip()
+                if not raw or raw == "[DONE]":
+                    continue
+                try:
+                    data = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                piece = _extract_stream_delta(data)
+                if piece:
+                    yield piece
+
+    def _payload(self, prompt: str, system: str, *, max_tokens: int) -> dict:
+        payload: dict = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.35,
+                "maxOutputTokens": max_tokens,
+            },
+        }
+        if system.strip():
+            payload["systemInstruction"] = {"parts": [{"text": system.strip()}]}
+        return payload
 
     async def classify_intent(self, transcript: str) -> str:
         prompt = (
@@ -106,3 +162,11 @@ def _extract_text(data: dict) -> str:
         return data["candidates"][0]["content"]["parts"][0]["text"]
     except (KeyError, IndexError, TypeError):
         return json.dumps(data)
+
+
+def _extract_stream_delta(data: dict) -> str:
+    try:
+        parts = data["candidates"][0]["content"]["parts"]
+        return "".join(str(p.get("text") or "") for p in parts)
+    except (KeyError, IndexError, TypeError):
+        return ""
