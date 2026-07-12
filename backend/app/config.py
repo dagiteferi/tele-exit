@@ -15,7 +15,7 @@ load_dotenv(_ENV_FILE, override=False)
 @dataclass(frozen=True)
 class Settings:
     jwt_secret: str = "change-me-to-a-real-secret"
-    use_fakes: bool = True
+    use_fakes: bool = False
     db_path: str = "./tele_exit.db"
     gemini_api_key: str = ""
     tavily_api_key: str = ""
@@ -60,7 +60,7 @@ def _env_origins(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
 def get_settings() -> Settings:
     return Settings(
         jwt_secret=os.getenv("JWT_SECRET", "change-me-to-a-real-secret"),
-        use_fakes=_env_bool("USE_FAKES", True),
+        use_fakes=_env_bool("USE_FAKES", False),
         db_path=os.getenv("DB_PATH", "./tele_exit.db"),
         gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
         tavily_api_key=os.getenv("TAVILY_API_KEY", ""),

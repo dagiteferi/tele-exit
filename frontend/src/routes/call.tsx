@@ -962,7 +962,7 @@ function CallScreen() {
         >
           <div className="min-w-0">
             <p className="text-sm text-primary">
-              Planner saved {plannedSessions.length} session
+              Planner suggested {plannedSessions.length} session
               {plannedSessions.length === 1 ? "" : "s"}
             </p>
             <p className="truncate text-xs text-muted-foreground">
@@ -976,6 +976,7 @@ function CallScreen() {
                     minute: "2-digit",
                   })}`
                 : ""}
+              {" · tap Accept on Calendar"}
             </p>
           </div>
           <Link
@@ -983,7 +984,7 @@ function CallScreen() {
             className="shrink-0 rounded-md border border-input px-3 py-1.5 text-xs font-medium text-primary hover:bg-secondary"
             onClick={() => stopAllSpeech()}
           >
-            Open Calendar
+            Review & Accept
           </Link>
         </div>
       )}

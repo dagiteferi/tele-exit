@@ -43,6 +43,7 @@ class FakeRepository:
         self.profiles: dict[str, Any] = {}
         self.events: list[Any] = []
         self.outbox: list[dict] = []
+        self.calendar_suggestions: list[dict] = []
         if profile is not None:
             self.profiles[profile["student_id"]] = profile
 
@@ -68,7 +69,26 @@ class FakeRepository:
         raise NotImplementedError
 
     async def list_calendar_events(self, student_id: str) -> list[dict]:
-        return []
+        return [e for e in self.calendar_suggestions if e["student_id"] == student_id]
+
+    async def create_calendar_suggestion(
+        self,
+        student_id: str,
+        topic: str,
+        start_iso: str,
+        duration_minutes: int,
+    ) -> dict:
+        row = {
+            "id": f"cal-{len(self.calendar_suggestions) + 1}",
+            "student_id": student_id,
+            "topic": topic,
+            "start_iso": start_iso,
+            "duration_minutes": int(duration_minutes),
+            "external_event_id": None,
+            "status": "suggested",
+        }
+        self.calendar_suggestions.append(row)
+        return row
 
     async def write_outbox_record(self, event_type: str, payload: dict) -> None:
         self.outbox.append({"event_type": event_type, "payload": payload})

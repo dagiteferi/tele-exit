@@ -121,8 +121,8 @@ def planner_scheduled_message(topics: list[str], *, start_hint: str = "") -> str
     names = ", ".join(topics)
     when = f" starting {start_hint}" if start_hint else ""
     return (
-        f"I scheduled study sessions for: {names}{when}. "
-        "Open the Calendar page in Tele-Exit to see them."
+        f"I added study suggestions for: {names}{when}. "
+        "Open Calendar and tap Accept to confirm them."
     )
 
 

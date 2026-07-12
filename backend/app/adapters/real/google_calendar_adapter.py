@@ -18,8 +18,9 @@ logger = logging.getLogger(__name__)
 class GoogleCalendarAdapter(CalendarPort):
     """Creates study events via Google Calendar API when credentials work.
 
-    Falls back to a local stub id when Google is unavailable so Tele-Exit still
-    records acceptance — callers should read `last_delivery` for honesty.
+    Does not invent fake Google event ids. When Google is unavailable,
+    `last_delivery.mode` is `unavailable` and the caller should fall back to
+    real SMTP .ics email for demos.
     """
 
     def __init__(
@@ -34,7 +35,7 @@ class GoogleCalendarAdapter(CalendarPort):
         self.delegated_user = (delegated_user or "").strip()
         self.events: list[dict] = []
         self.last_delivery: dict[str, Any] = {
-            "mode": "stub",
+            "mode": "unavailable",
             "detail": "not attempted",
         }
 
@@ -50,53 +51,43 @@ class GoogleCalendarAdapter(CalendarPort):
         duration_minutes: int,
         attendee_email: str | None = None,
     ) -> str:
-        if self.is_configured:
-            try:
-                event_id = await asyncio.to_thread(
-                    self._insert_google_event,
-                    topic,
-                    start_iso,
-                    duration_minutes,
-                    attendee_email,
-                )
-                self.last_delivery = {
-                    "mode": "live",
-                    "detail": (
-                        f"Created on Google Calendar"
-                        + (
-                            f" and invited {attendee_email}"
-                            if attendee_email
-                            else ""
-                        )
-                    ),
-                    "html_link": self.events[-1].get("html_link") if self.events else None,
-                }
-                return event_id
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Google Calendar create failed: %s", exc)
-                self.last_delivery = {
-                    "mode": "stub",
-                    "detail": f"Google Calendar failed ({_short_err(exc)}). Saved in Tele-Exit only.",
-                }
-        else:
+        if not self.is_configured:
             self.last_delivery = {
-                "mode": "stub",
-                "detail": "Google credentials not configured. Saved in Tele-Exit only.",
+                "mode": "unavailable",
+                "detail": (
+                    "Google Calendar credentials not configured. "
+                    "SMTP calendar invite email will be used when available."
+                ),
             }
+            return ""
 
-        event_id = f"stub-gcal-{uuid.uuid4()}"
-        self.events.append(
-            {
-                "id": event_id,
-                "student_id": student_id,
-                "topic": topic,
-                "start_iso": start_iso,
-                "duration_minutes": duration_minutes,
-                "credentials_path": self.credentials_path,
-                "delivery": "stub",
+        try:
+            event_id = await asyncio.to_thread(
+                self._insert_google_event,
+                topic,
+                start_iso,
+                duration_minutes,
+                attendee_email,
+            )
+            self.last_delivery = {
+                "mode": "live",
+                "detail": (
+                    "Created on Google Calendar"
+                    + (f" and invited {attendee_email}" if attendee_email else "")
+                ),
+                "html_link": self.events[-1].get("html_link") if self.events else None,
             }
-        )
-        return event_id
+            return event_id
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Google Calendar create failed: %s", exc)
+            self.last_delivery = {
+                "mode": "unavailable",
+                "detail": (
+                    f"Google Calendar API unavailable ({_short_err(exc)}). "
+                    "SMTP calendar invite email will be used when available."
+                ),
+            }
+            return ""
 
     def _insert_google_event(
         self,
@@ -114,14 +105,13 @@ class GoogleCalendarAdapter(CalendarPort):
         body: dict[str, Any] = {
             "summary": f"Tele-Exit practice: {topic}",
             "description": (
-                "Practice session suggested by Tele-Exit after your study wrap-up.\n"
+                "Practice session suggested by Tele-Exit.\n"
                 "Open Tele-Exit → Exams to continue practicing."
             ),
             "start": {"dateTime": start.isoformat(), "timeZone": "UTC"},
             "end": {"dateTime": end.isoformat(), "timeZone": "UTC"},
         }
         if attendee_email and "@" in attendee_email and self.delegated_user:
-            # Service accounts cannot invite attendees without domain-wide delegation.
             body["attendees"] = [{"email": attendee_email.strip()}]
 
         created = (

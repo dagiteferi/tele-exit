@@ -160,8 +160,14 @@ async def accept_calendar_event(
         raise HTTPException(status_code=404, detail="Calendar suggestion not found")
 
     profile = await container.repo.get_profile(student_id)
-    attendee = str((profile or {}).get("email") or "") or None
+    user = await container.repo.get_user_by_id(student_id)
+    attendee = (
+        str((profile or {}).get("email") or "").strip()
+        or str((user or {}).get("email") or "").strip()
+        or None
+    )
 
+    # Prefer Google Calendar API when it works; never invent stub Google ids.
     external_id = await container.calendar.create_study_event(
         student_id=student_id,
         topic=str(match["topic"]),
@@ -169,31 +175,24 @@ async def accept_calendar_event(
         duration_minutes=int(match["duration_minutes"]),
         attendee_email=attendee,
     )
-    updated = await container.repo.accept_calendar_event(
-        student_id,
-        event_id,
-        external_event_id=external_id,
-    )
-    if updated is None:
-        raise HTTPException(status_code=404, detail="Calendar suggestion not found")
-
     cal_delivery = getattr(container.calendar, "last_delivery", None) or {}
-    cal_mode = str(cal_delivery.get("mode") or "stub")
+    cal_mode = str(cal_delivery.get("mode") or "unavailable")
     details: list[str] = []
     if cal_delivery.get("detail"):
         details.append(str(cal_delivery["detail"]))
     html_link = cal_delivery.get("html_link")
 
-    # Demo path: email a real .ics invite so it appears in Google Calendar
-    # even when the Calendar API is not enabled yet.
-    email_mode = "stub"
-    if attendee and "@" in attendee:
+    # Demo-ready path: always email a real .ics invite when SMTP is configured.
+    email_mode = "unavailable"
+    smtp_ready = bool(
+        container.settings.smtp_user.strip() and container.settings.smtp_password.strip()
+    )
+    if attendee and "@" in attendee and smtp_ready:
         from app.domain.ics_invite import build_study_ics
 
         organizer = (
             container.settings.smtp_from
             or container.settings.smtp_user
-            or container.settings.google_delegated_user
             or "noreply@tele-exit.local"
         )
         ics = build_study_ics(
@@ -221,13 +220,37 @@ async def accept_calendar_event(
                 ics_content=ics,
             )
             email_delivery = getattr(container.email, "last_delivery", None) or {}
-            email_mode = str(email_delivery.get("mode") or "stub")
+            email_mode = str(email_delivery.get("mode") or "unavailable")
             if email_delivery.get("detail"):
                 details.append(str(email_delivery["detail"]))
+            if email_mode == "live" and not external_id:
+                external_id = f"ics-email-{event_id}"
         except Exception as exc:  # noqa: BLE001
             details.append(f"Invite email failed ({exc}).")
+            email_mode = "unavailable"
+    elif not attendee:
+        details.append("No student email on file — cannot send calendar invite.")
+    elif not smtp_ready:
+        details.append("SMTP_USER / SMTP_PASSWORD not set — cannot email calendar invite.")
 
     live = cal_mode == "live" or email_mode == "live"
+    if not live:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Could not deliver a real calendar invite. "
+                + (" ".join(details) if details else "Configure SMTP for demo email delivery.")
+            ),
+        )
+
+    updated = await container.repo.accept_calendar_event(
+        student_id,
+        event_id,
+        external_event_id=external_id or None,
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Calendar suggestion not found")
+
     if live and email_mode == "live" and cal_mode != "live":
         summary = (
             f"Calendar invite emailed to {attendee}. "
@@ -238,9 +261,7 @@ async def accept_calendar_event(
         if email_mode == "live":
             summary += f" Invite also emailed to {attendee}."
     else:
-        summary = " ".join(details) or (
-            "Accepted in Tele-Exit only. Configure SMTP_USER/SMTP_PASSWORD for real invite email."
-        )
+        summary = " ".join(details) or "Delivered."
 
     return AcceptCalendarResponse(
         event=CalendarRecommendationOut(
@@ -251,7 +272,7 @@ async def accept_calendar_event(
             status=str(updated.get("status") or "accepted"),
             external_event_id=updated.get("external_event_id"),
         ),
-        delivery_mode="live" if live else "stub",
+        delivery_mode="live",
         delivery_detail=summary,
         html_link=str(html_link) if html_link else None,
     )
