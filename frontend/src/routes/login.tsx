@@ -1,14 +1,19 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { useAuth } from "@/lib/auth";
 import { loginStudent } from "@/lib/api";
-import { AuthLayout } from "./register";
+import {
+  AuthLayout,
+  AuthSwitchLink,
+  Field,
+  authInputClass,
+} from "@/components/AuthLayout";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
-      { title: "Log in — Tele-Exit" },
+      { title: "Tele-Exit" },
       { name: "description", content: "Log back in to keep preparing for your exit exam." },
     ],
   }),
@@ -19,9 +24,6 @@ const schema = z.object({
   email: z.string().trim().email("Enter a valid email").max(255),
   password: z.string().min(1, "Enter your password").max(200),
 });
-
-const inputClass =
-  "block w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-foreground focus:border-[var(--amber-strong)] focus:outline-none";
 
 function LoginPage() {
   const { login } = useAuth();
@@ -63,45 +65,42 @@ function LoginPage() {
       title="Welcome back"
       subtitle="Pick up right where you left off."
       footer={
-        <>
-          New to Tele-Exit?{" "}
-          <Link to="/register" className="text-primary underline underline-offset-4">
-            Create an account
-          </Link>
-        </>
+        <AuthSwitchLink prompt="New to Tele-Exit?" to="/register" label="Create an account" />
       }
     >
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
-        <div>
-          <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-primary">
-            Email
-          </label>
+        <Field label="Email" htmlFor="email" error={errors.email}>
           <input
             id="email"
             type="email"
             autoComplete="email"
             value={values.email}
+            aria-invalid={Boolean(errors.email)}
             onChange={(e) => setValues({ ...values, email: e.target.value })}
-            className={inputClass}
+            className={authInputClass}
           />
-          {errors.email && (
-            <p role="alert" className="mt-1 text-xs text-destructive">
-              {errors.email}
-            </p>
-          )}
-        </div>
+        </Field>
 
         <div>
-          <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-primary">
-            Password
-          </label>
+          <div className="mb-1.5 flex items-baseline justify-between gap-3">
+            <label htmlFor="password" className="block text-sm font-medium text-primary">
+              Password
+            </label>
+            <a
+              href="#forgot-password"
+              className="text-xs text-muted-foreground transition-colors hover:text-primary"
+            >
+              Forgot password?
+            </a>
+          </div>
           <input
             id="password"
             type="password"
             autoComplete="current-password"
             value={values.password}
+            aria-invalid={Boolean(errors.password)}
             onChange={(e) => setValues({ ...values, password: e.target.value })}
-            className={inputClass}
+            className={authInputClass}
           />
           {errors.password && (
             <p role="alert" className="mt-1 text-xs text-destructive">
@@ -111,7 +110,10 @@ function LoginPage() {
         </div>
 
         {submitError && (
-          <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+          >
             {submitError}
           </p>
         )}

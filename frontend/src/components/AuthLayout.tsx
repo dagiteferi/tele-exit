@@ -1,13 +1,15 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { BrandMark, SiteFooter } from "@/components/SiteFooter";
+import { SiteFooter } from "@/components/SiteFooter";
+import { SiteHeader } from "@/components/SiteHeader";
+import { ChatbotWidget } from "@/components/ChatbotWidget";
 
 export const authInputClass =
   "block w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground transition-colors hover:border-primary/30 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/25 aria-[invalid=true]:border-destructive aria-[invalid=true]:focus:ring-destructive/25";
 
 /**
- * Two-column auth shell: fixed quote on the left, form on the right.
- * Columns are vertically centered in the viewport; quiet SiteFooter below.
+ * Auth shell with the same sticky nav + footer as the home page.
+ * Left quote column stays fixed; form column is vertically centered.
  */
 export function AuthLayout({
   title,
@@ -25,11 +27,12 @@ export function AuthLayout({
 }) {
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
+      <SiteHeader />
+
       <div className="mx-auto flex w-full max-w-5xl flex-1 items-center px-5 py-10 md:py-12">
         <div className="grid w-full gap-16 md:grid-cols-2 md:items-center">
           <div className="hidden md:block">
-            <BrandMark />
-            <blockquote className="mt-16 font-display text-2xl leading-relaxed text-primary">
+            <blockquote className="font-display text-2xl leading-relaxed text-primary">
               "The night before the exam, you want someone patient sitting next
               to you. That's the whole idea."
             </blockquote>
@@ -37,7 +40,6 @@ export function AuthLayout({
           </div>
 
           <div>
-            <BrandMark className="mb-8 md:hidden" />
             {stepLabel && (
               <p className="mb-3 text-xs font-medium tracking-wide text-muted-foreground">
                 {stepLabel}
@@ -54,7 +56,9 @@ export function AuthLayout({
           </div>
         </div>
       </div>
+
       <SiteFooter />
+      <ChatbotWidget />
     </div>
   );
 }
@@ -100,7 +104,10 @@ export function AuthSwitchLink({
   return (
     <>
       {prompt}{" "}
-      <Link to={to} className="text-primary underline underline-offset-4 transition-colors hover:text-primary/80">
+      <Link
+        to={to}
+        className="text-primary underline underline-offset-4 transition-colors hover:text-primary/80"
+      >
         {label}
       </Link>
     </>

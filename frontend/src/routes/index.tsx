@@ -54,7 +54,7 @@ function Landing() {
           </div>
         </section>
 
-        <section className="mx-auto max-w-6xl px-5 pb-20">
+        <section className="mx-auto max-w-6xl px-5 pb-20 pt-16 md:pb-24 md:pt-28">
           <div className="grid gap-5 md:grid-cols-3 md:gap-6">
             {[
               {
