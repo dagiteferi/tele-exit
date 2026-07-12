@@ -119,3 +119,4 @@ def test_upload_rejects_unsupported_file(client: TestClient):
         files={"file": ("notes.txt", b"hello", "text/plain")},
     )
     assert response.status_code == 400
+    assert "json" in response.json()["detail"].lower()

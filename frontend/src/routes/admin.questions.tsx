@@ -175,7 +175,10 @@ function ExamsAdmin() {
 
           {uploading && <p className="text-sm text-muted-foreground">Uploading and embedding…</p>}
           {error && (
-            <p role="alert" className="rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <p
+              role="alert"
+              className="whitespace-pre-wrap rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+            >
               {error}
             </p>
           )}
@@ -183,6 +186,7 @@ function ExamsAdmin() {
             <div className="rounded border border-hairline bg-[color:var(--surface)] p-4 text-sm">
               <p className="mb-2 text-primary">
                 Exam “{result.title}” · {result.fieldOfStudy}
+                {result.questionCount != null ? ` · ${result.questionCount} checked` : ""}
               </p>
               <div className="flex flex-wrap gap-6">
                 <Stat label="Ingested" value={result.ingested} tone="ok" />
@@ -193,6 +197,13 @@ function ExamsAdmin() {
                   tone={result.errors.length > 0 ? "err" : "muted"}
                 />
               </div>
+              {(result.warnings?.length ?? 0) > 0 && (
+                <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-[var(--amber-strong)]">
+                  {result.warnings!.slice(0, 8).map((w, i) => (
+                    <li key={i}>{w}</li>
+                  ))}
+                </ul>
+              )}
               {result.errors.length > 0 && (
                 <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-destructive">
                   {result.errors.map((e, i) => (
