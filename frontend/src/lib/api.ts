@@ -559,6 +559,7 @@ export async function getExam(
       question_text: string;
       choices?: string[] | null;
       reference_answer?: string | null;
+      explanation?: string | null;
       field_of_study?: string | null;
     }[];
     mode: ExamMode;
@@ -585,6 +586,7 @@ export async function startExamAttempt(
       question_text: string;
       choices?: string[] | null;
       reference_answer?: string | null;
+      explanation?: string | null;
       field_of_study?: string | null;
     }[];
   }>(`/exams/${examId}/attempts`, {
