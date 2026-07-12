@@ -8,9 +8,10 @@ from app.adapters.fakes.fake_vector_search import (
     FakeEmbedding,
     FakeVectorSearch,
 )
+from app.adapters.real.sqlite_repository_adapter import SQLiteRepositoryAdapter
 from app.auth.security import create_access_token
 from app.core.di import reset_container
-from app.routes.question_routes import router
+from app.routes.admin_routes import legacy_router as router
 
 
 @pytest.fixture
@@ -23,12 +24,21 @@ def client(vector_store: FakeVectorSearch, tmp_path) -> TestClient:
     reset_container()
     app = FastAPI()
     app.include_router(router)
+    repo = SQLiteRepositoryAdapter(db_path=str(tmp_path / "test.db"))
+
+    class Container:
+        def __init__(self) -> None:
+            self.embedding = FakeEmbedding()
+            self.vector_store = vector_store
+            self.repo = repo
+
+        def __getitem__(self, key: str):
+            return getattr(self, key)
+
+    container = Container()
 
     def override_container():
-        return {
-            "embedding": FakeEmbedding(),
-            "vector_store": vector_store,
-        }
+        return container
 
     from app.core import di
 
@@ -109,3 +119,4 @@ def test_upload_rejects_unsupported_file(client: TestClient):
         files={"file": ("notes.txt", b"hello", "text/plain")},
     )
     assert response.status_code == 400
+    assert "json" in response.json()["detail"].lower()

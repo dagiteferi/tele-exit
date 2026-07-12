@@ -15,12 +15,22 @@ load_dotenv(_ENV_FILE, override=False)
 @dataclass(frozen=True)
 class Settings:
     jwt_secret: str = "change-me-to-a-real-secret"
-    use_fakes: bool = True
+    use_fakes: bool = False
     db_path: str = "./tele_exit.db"
     gemini_api_key: str = ""
     tavily_api_key: str = ""
     youtube_api_key: str = ""
     google_credentials_path: str = "./credentials/google_service_account.json"
+    google_calendar_id: str = "primary"
+    google_delegated_user: str = ""
+    # Real demo email via Gmail SMTP + App Password (preferred for demos)
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_use_tls: bool = True
+    frontend_url: str = "http://localhost:3000"
     livekit_url: str = ""
     livekit_api_key: str = ""
     livekit_api_secret: str = ""
@@ -28,6 +38,8 @@ class Settings:
     admin_bootstrap_password: str = ""
     app_name: str = "Tele-Exit"
     app_version: str = "0.1.0"
+    # Comma-separated browser origins allowed to call the API (CORS).
+    cors_origins: tuple[str, ...] = ("http://localhost:3000", "http://127.0.0.1:3000")
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -37,11 +49,18 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_origins(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    return tuple(part.strip() for part in raw.split(",") if part.strip())
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings(
         jwt_secret=os.getenv("JWT_SECRET", "change-me-to-a-real-secret"),
-        use_fakes=_env_bool("USE_FAKES", True),
+        use_fakes=_env_bool("USE_FAKES", False),
         db_path=os.getenv("DB_PATH", "./tele_exit.db"),
         gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
         tavily_api_key=os.getenv("TAVILY_API_KEY", ""),
@@ -50,6 +69,15 @@ def get_settings() -> Settings:
             "GOOGLE_CREDENTIALS_PATH",
             "./credentials/google_service_account.json",
         ),
+        google_calendar_id=os.getenv("GOOGLE_CALENDAR_ID", "primary"),
+        google_delegated_user=os.getenv("GOOGLE_DELEGATED_USER", ""),
+        smtp_host=os.getenv("SMTP_HOST", "smtp.gmail.com"),
+        smtp_port=int(os.getenv("SMTP_PORT", "587") or "587"),
+        smtp_user=os.getenv("SMTP_USER", ""),
+        smtp_password=os.getenv("SMTP_PASSWORD", ""),
+        smtp_from=os.getenv("SMTP_FROM", "") or os.getenv("SMTP_USER", ""),
+        smtp_use_tls=_env_bool("SMTP_USE_TLS", True),
+        frontend_url=os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/"),
         livekit_url=os.getenv("LIVEKIT_URL", ""),
         livekit_api_key=os.getenv("LIVEKIT_API_KEY", ""),
         livekit_api_secret=os.getenv("LIVEKIT_API_SECRET", ""),
@@ -57,8 +85,14 @@ def get_settings() -> Settings:
         admin_bootstrap_password=os.getenv("ADMIN_BOOTSTRAP_PASSWORD", ""),
         app_name=os.getenv("APP_NAME", "Tele-Exit"),
         app_version=os.getenv("APP_VERSION", "0.1.0"),
+        cors_origins=_env_origins(
+            "CORS_ORIGINS",
+            ("http://localhost:3000", "http://127.0.0.1:3000"),
+        ),
     )
 
 
 def clear_settings_cache() -> None:
+    # Re-read .env so SMTP changes apply after restart / lifespan.
+    load_dotenv(_ENV_FILE, override=True)
     get_settings.cache_clear()

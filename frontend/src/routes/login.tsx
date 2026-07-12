@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { useAuth } from "@/lib/auth";
@@ -7,6 +7,7 @@ import {
   AuthLayout,
   AuthSwitchLink,
   Field,
+  PasswordInput,
   authInputClass,
 } from "@/components/AuthLayout";
 
@@ -48,7 +49,7 @@ function LoginPage() {
     try {
       const { user, token } = await loginStudent(parsed.data.email, parsed.data.password);
       login(user, token);
-      navigate({ to: user.role === "admin" ? "/admin/questions" : "/dashboard" });
+      navigate({ to: user.role === "admin" ? "/admin/users" : "/dashboard" });
     } catch (err) {
       setSubmitError(
         err instanceof Error
@@ -86,21 +87,19 @@ function LoginPage() {
             <label htmlFor="password" className="block text-sm font-medium text-primary">
               Password
             </label>
-            <a
-              href="#forgot-password"
+            <Link
+              to="/forgot-password"
               className="text-xs text-muted-foreground transition-colors hover:text-primary"
             >
               Forgot password?
-            </a>
+            </Link>
           </div>
-          <input
+          <PasswordInput
             id="password"
-            type="password"
             autoComplete="current-password"
             value={values.password}
             aria-invalid={Boolean(errors.password)}
             onChange={(e) => setValues({ ...values, password: e.target.value })}
-            className={authInputClass}
           />
           {errors.password && (
             <p role="alert" className="mt-1 text-xs text-destructive">

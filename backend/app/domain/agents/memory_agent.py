@@ -104,5 +104,6 @@ class MemoryAgent:
                 readiness_percent=profile.readiness_percent(),
             ),
             agent_used="memory",
+            action="checking_progress",
             metadata={"profile": as_dict},
         )

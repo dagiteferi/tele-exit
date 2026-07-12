@@ -1,0 +1,33 @@
+{
+  "title": "Computer Science Exit Exam 2024",
+  "field_of_study": "Computer Science",
+  "year": 2024,
+  "description": "Sample exit exam for Computer Science students",
+  "questions": [
+    {
+      "topic": "Algorithms",
+      "year": 2024,
+      "question": "What is the time complexity of breadth-first search on a graph with V vertices and E edges?",
+      "choices": ["O(V)", "O(V + E)", "O(V^2)", "O(E log V)"],
+      "answer": "O(V + E)"
+    },
+    {
+      "topic": "Operating Systems",
+      "year": 2024,
+      "question": "Define deadlock and list the four Coffman conditions.",
+      "answer": "Deadlock is a state where processes wait forever for resources held by each other. Conditions: mutual exclusion, hold and wait, no preemption, circular wait."
+    },
+    {
+      "topic": "Databases",
+      "year": 2024,
+      "question": "What does ACID stand for in database transactions?",
+      "choices": [
+        "Atomicity, Consistency, Isolation, Durability",
+        "Availability, Consistency, Integrity, Durability",
+        "Atomicity, Concurrency, Isolation, Distribution",
+        "Accuracy, Consistency, Isolation, Durability"
+      ],
+      "answer": "Atomicity, Consistency, Isolation, Durability"
+    }
+  ]
+}

@@ -30,6 +30,22 @@ def verify_password(password: str, password_hash: str) -> bool:
     return pwd_context.verify(password, password_hash)
 
 
+def create_password_reset_token() -> tuple[str, str]:
+    """Return (raw_token_for_email, sha256_hash_for_db)."""
+    import hashlib
+    import secrets
+
+    raw = secrets.token_urlsafe(32)
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return raw, digest
+
+
+def hash_password_reset_token(raw_token: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+
 def create_access_token(student_id: str, role: str = "student") -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=JWT_EXPIRE_MINUTES)
     payload = {

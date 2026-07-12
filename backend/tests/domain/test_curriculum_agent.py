@@ -45,6 +45,26 @@ async def test_curriculum_handles_no_matches():
 
 
 @pytest.mark.asyncio
+async def test_curriculum_injects_learner_memory():
+    llm = FakeLLM(response="Let's reinforce Graphs.")
+    agent = CurriculumAgent(llm, FakeEmbedding(), FakeVectorStore([]))
+    result = await agent.handle(
+        AgentState(
+            student_id="s1",
+            transcript="help me",
+            profile={
+                "weak_topics": ["Graphs"],
+                "sessions_completed": 3,
+                "readiness_percent": 42,
+            },
+        )
+    )
+    prompt = llm.generate_calls[0][0]
+    assert "weak topics: Graphs" in prompt
+    assert result.metadata["used_memory"] is True
+
+
+@pytest.mark.asyncio
 async def test_curriculum_requires_student_and_transcript():
     agent = CurriculumAgent(FakeLLM(), FakeEmbedding(), FakeVectorStore())
     with pytest.raises(ValueError, match="student_id"):

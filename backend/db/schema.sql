@@ -48,6 +48,22 @@ CREATE TABLE IF NOT EXISTS calendar_events (
     start_iso TEXT NOT NULL,
     duration_minutes INTEGER NOT NULL,
     external_event_id TEXT,
+    status TEXT NOT NULL DEFAULT 'suggested',
+    FOREIGN KEY (student_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS session_summaries (
+    id TEXT PRIMARY KEY,
+    student_id TEXT NOT NULL,
+    attempt_id TEXT,
+    exam_id TEXT,
+    exam_title TEXT NOT NULL DEFAULT '',
+    questions_visited INTEGER NOT NULL DEFAULT 0,
+    questions_attempted INTEGER NOT NULL DEFAULT 0,
+    questions_correct INTEGER NOT NULL DEFAULT 0,
+    topics_json TEXT NOT NULL DEFAULT '[]',
+    summary_text TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (student_id) REFERENCES users(id)
 );
 
@@ -60,14 +76,29 @@ CREATE TABLE IF NOT EXISTS outbox (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS exams (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    field_of_study TEXT NOT NULL,
+    year INTEGER,
+    description TEXT,
+    created_by TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS exam_questions (
     id TEXT PRIMARY KEY,
+    exam_id TEXT,
+    field_of_study TEXT,
     topic TEXT NOT NULL,
     year INTEGER NOT NULL,
     question_text TEXT NOT NULL,
     reference_answer TEXT NOT NULL,
+    explanation TEXT,
+    choices_json TEXT,
     source TEXT NOT NULL DEFAULT 'user_uploaded',
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (exam_id) REFERENCES exams(id)
 );
 
 -- Stock SQLite stand-in for sqlite-vec vec0 (swap later behind VectorStorePort)
@@ -75,4 +106,51 @@ CREATE TABLE IF NOT EXISTS question_embeddings (
     question_id TEXT PRIMARY KEY,
     embedding TEXT NOT NULL,
     FOREIGN KEY (question_id) REFERENCES exam_questions(id)
+);
+
+CREATE TABLE IF NOT EXISTS exam_attempts (
+    id TEXT PRIMARY KEY,
+    exam_id TEXT NOT NULL,
+    student_id TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    score_correct INTEGER NOT NULL DEFAULT 0,
+    score_total INTEGER NOT NULL DEFAULT 0,
+    answers_json TEXT NOT NULL DEFAULT '[]',
+    progress_index INTEGER NOT NULL DEFAULT 0,
+    questions_visited INTEGER NOT NULL DEFAULT 1,
+    visited_json TEXT NOT NULL DEFAULT '[0]',
+    started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TEXT,
+    FOREIGN KEY (exam_id) REFERENCES exams(id),
+    FOREIGN KEY (student_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_exams_field ON exams(field_of_study);
+CREATE INDEX IF NOT EXISTS idx_exam_attempts_student ON exam_attempts(student_id);
+
+-- Password reset (forgot-password email flow)
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id);
+
+-- Product / website support chatbot knowledge (separate from exam RAG)
+CREATE TABLE IF NOT EXISTS product_chunks (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS product_embeddings (
+    chunk_id TEXT PRIMARY KEY,
+    embedding TEXT NOT NULL,
+    FOREIGN KEY (chunk_id) REFERENCES product_chunks(id) ON DELETE CASCADE
 );

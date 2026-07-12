@@ -29,9 +29,11 @@ async def test_fake_llm_generate_and_classify():
     assert await llm.generate("prompt", system="sys") == "hello"
     assert await llm.classify_intent("show me a youtube video") == "youtube"
     assert await llm.classify_intent("search this online") == "search"
+    assert await llm.classify_intent("how am I doing?") == "memory"
+    assert await llm.classify_intent("schedule me for tomorrow") == "planner"
     assert await llm.classify_intent("explain BFS") == "curriculum"
     assert len(llm.generate_calls) == 1
-    assert len(llm.classify_calls) == 3
+    assert len(llm.classify_calls) == 5
 
 
 @pytest.mark.asyncio

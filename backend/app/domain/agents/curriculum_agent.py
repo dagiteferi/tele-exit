@@ -7,6 +7,7 @@ from app.domain.prompts import (
     EMPTY_CURRICULUM_CONTEXT,
     curriculum_user_prompt,
     format_curriculum_match,
+    learner_context_block,
 )
 from app.ports.embedding_port import EmbeddingPort
 from app.ports.llm_port import LLMPort
@@ -49,8 +50,15 @@ class CurriculumAgent:
             else EMPTY_CURRICULUM_CONTEXT
         )
 
+        learner = learner_context_block(
+            state.profile if isinstance(state.profile, dict) else None
+        )
         text = await self._llm.generate(
-            curriculum_user_prompt(state.transcript, context),
+            curriculum_user_prompt(
+                state.transcript,
+                context,
+                learner_context=learner,
+            ),
             system=CURRICULUM_SYSTEM,
         )
         return AgentResult(
@@ -60,5 +68,6 @@ class CurriculumAgent:
             metadata={
                 "matches": matches,
                 "match_count": len(matches),
+                "used_memory": bool(learner),
             },
         )

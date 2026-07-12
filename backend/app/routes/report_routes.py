@@ -20,10 +20,31 @@ async def trigger_report(
     student_id: str = Depends(get_current_student_id),
     container: AppContainer = Depends(get_container),
 ):
-    await run_report_saga(student_id, container.repo, container.llm)
+    profile = await container.repo.get_profile(student_id)
+    email_to = str((profile or {}).get("email") or "")
+    preview = await run_report_saga(student_id, container.repo, container.llm)
     await dispatch_pending_outbox_records(
         container.repo,
         container.email,
         container.calendar,
     )
-    return ReportTriggerResponse(student_id=student_id)
+    weak = list((profile or {}).get("weak_topics") or [])
+    delivery = getattr(container.email, "last_delivery", None) or {}
+    mode = str(delivery.get("mode") or "stub")
+    detail = str(
+        delivery.get("detail")
+        or (
+            "Report generated. Email delivery is not connected — open the preview below."
+            if email_to
+            else "Report generated. Add an email on your account to enable delivery."
+        )
+    )
+    return ReportTriggerResponse(
+        student_id=student_id,
+        email_to=email_to or None,
+        report_preview=preview or "",
+        calendar_suggestions=min(3, len(weak)),
+        delivery_mode="live" if mode == "live" else "stub",
+        delivery_detail=detail,
+        email_sent=mode == "live",
+    )

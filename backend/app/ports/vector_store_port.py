@@ -16,4 +16,5 @@ class VectorStorePort(ABC):
         text: str,
         embedding_port: EmbeddingPort,
         top_k: int = 3,
+        field_of_study: str | None = None,
     ) -> list[dict]: ...

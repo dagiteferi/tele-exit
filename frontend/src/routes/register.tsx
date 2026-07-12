@@ -7,6 +7,7 @@ import {
   AuthLayout,
   AuthSwitchLink,
   Field,
+  PasswordInput,
   authInputClass,
 } from "@/components/AuthLayout";
 
@@ -123,7 +124,7 @@ function RegisterPage() {
     try {
       const { user, token } = await registerStudent(parsed.data);
       login(user, token);
-      navigate({ to: user.role === "admin" ? "/admin/questions" : "/dashboard" });
+      navigate({ to: user.role === "admin" ? "/admin/users" : "/dashboard" });
     } catch (err) {
       setSubmitError(
         err instanceof Error
@@ -186,14 +187,12 @@ function RegisterPage() {
               error={errors.password}
               hint="At least 8 characters."
             >
-              <input
+              <PasswordInput
                 id="password"
-                type="password"
                 autoComplete="new-password"
                 value={values.password}
                 aria-invalid={Boolean(errors.password)}
                 onChange={(e) => patch({ password: e.target.value })}
-                className={authInputClass}
               />
             </Field>
           </>

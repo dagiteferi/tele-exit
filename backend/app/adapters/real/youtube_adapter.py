@@ -12,27 +12,39 @@ class YouTubeAdapter(VideoSearchPort):
         self.api_key = api_key
 
     async def find_video(self, topic: str) -> dict:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.get(
-                "https://www.googleapis.com/youtube/v3/search",
-                params={
-                    "part": "snippet",
-                    "q": topic,
-                    "type": "video",
-                    "maxResults": 1,
-                    "key": self.api_key,
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.get(
+                    "https://www.googleapis.com/youtube/v3/search",
+                    params={
+                        "part": "snippet",
+                        "q": topic,
+                        "type": "video",
+                        "maxResults": 3,
+                        "safeSearch": "strict",
+                        "key": self.api_key,
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+        except Exception:
+            # Keep the call usable if YouTube API is down / quota exhausted.
+            return {
+                "title": f"{topic} — search on YouTube",
+                "url": f"https://www.youtube.com/results?search_query={topic.replace(' ', '+')}",
+                "timestamp": "0:00",
+                "description": "Open this search to pick a video.",
+                "video_id": "",
+            }
 
         items = data.get("items") or []
         if not items:
             return {
                 "title": f"{topic} (no video found)",
-                "url": "",
+                "url": f"https://www.youtube.com/results?search_query={topic.replace(' ', '+')}",
                 "timestamp": "0:00",
                 "description": "",
+                "video_id": "",
             }
 
         item = items[0]
@@ -40,7 +52,8 @@ class YouTubeAdapter(VideoSearchPort):
         snippet = item.get("snippet", {})
         return {
             "title": snippet.get("title", topic),
-            "url": f"https://youtube.com/watch?v={video_id}",
+            "url": f"https://www.youtube.com/watch?v={video_id}",
             "timestamp": "0:00",
             "description": snippet.get("description", ""),
+            "video_id": video_id,
         }

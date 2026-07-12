@@ -45,6 +45,8 @@ class Intent(str, Enum):
     CURRICULUM = "curriculum"
     SEARCH = "search"
     YOUTUBE = "youtube"
+    MEMORY = "memory"
+    PLANNER = "planner"
 
 
 class OutboxStatus(str, Enum):
@@ -161,6 +163,10 @@ class ExamQuestion:
     question_text: str
     reference_answer: str
     source: str = "user_uploaded"
+    exam_id: Optional[str] = None
+    field_of_study: Optional[str] = None
+    choices: Optional[list[str]] = None
+    explanation: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not self.topic.strip():
@@ -171,6 +177,8 @@ class ExamQuestion:
             raise ValueError("reference_answer is required")
         if self.year < 1900 or self.year > 2100:
             raise ValueError("year is out of range")
+        if self.choices is not None and not isinstance(self.choices, list):
+            raise ValueError("choices must be a list of strings")
 
 
 @dataclass

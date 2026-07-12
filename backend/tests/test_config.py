@@ -21,8 +21,8 @@ def test_get_settings_reads_environment(monkeypatch):
     clear_settings_cache()
 
 
-def test_use_fakes_defaults_true(monkeypatch):
+def test_use_fakes_defaults_false(monkeypatch):
     clear_settings_cache()
     monkeypatch.delenv("USE_FAKES", raising=False)
-    assert get_settings().use_fakes is True
+    assert get_settings().use_fakes is False
     clear_settings_cache()

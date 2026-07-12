@@ -12,13 +12,21 @@ from app.core.di import (
 )
 from app.domain.agents.memory_agent import MemoryAgent
 from app.domain.models import SessionEvent
+from app.domain.session_wrapup import wrap_up_session
 from app.schemas import (
+    AcceptCalendarResponse,
     CalendarEventOut,
+    CalendarRecommendationOut,
     OpeningQuestion,
+    PracticeProgressOut,
     ProfileResponse,
+    RecentSessionOut,
     SessionEndRequest,
     SessionEndResponse,
     SessionStartResponse,
+    SessionSummaryOut,
+    SessionWrapUpRequest,
+    SessionWrapUpResponse,
     SettingsUpdateRequest,
     SettingsUpdateResponse,
     TopicScoreOut,
@@ -46,13 +54,65 @@ async def get_profile(
         )
         for topic, score in (profile.get("topic_scores") or {}).items()
     }
+    recent_rows = await container.repo.list_recent_sessions(student_id)
+    recent = [
+        RecentSessionOut(
+            id=str(row["id"]),
+            topic=str(row["topic"]),
+            correct=int(row["correct"]),
+            attempted=int(row["attempted"]),
+            date=str(row["date"]),
+        )
+        for row in recent_rows
+    ]
+    practice_rows = await container.repo.list_practice_progress(student_id)
+    practice_progress = [
+        PracticeProgressOut(
+            attempt_id=str(row["attempt_id"]),
+            exam_id=str(row["exam_id"]),
+            exam_title=str(row["exam_title"]),
+            progress_index=int(row["progress_index"]),
+            question_number=int(row["question_number"]),
+            questions_visited=int(row["questions_visited"]),
+            question_total=int(row["question_total"]),
+            started_at=str(row.get("started_at") or ""),
+        )
+        for row in practice_rows
+    ]
+    summary_rows = await container.repo.list_session_summaries(student_id)
+    session_summaries = [
+        SessionSummaryOut(
+            id=str(row["id"]),
+            attempt_id=row.get("attempt_id"),
+            exam_id=row.get("exam_id"),
+            exam_title=str(row.get("exam_title") or ""),
+            questions_visited=int(row.get("questions_visited") or 0),
+            questions_attempted=int(row.get("questions_attempted") or 0),
+            questions_correct=int(row.get("questions_correct") or 0),
+            topics=list(row.get("topics") or []),
+            summary_text=str(row.get("summary_text") or ""),
+            created_at=str(row.get("created_at") or ""),
+        )
+        for row in summary_rows
+    ]
+    freq = profile.get("report_frequency") or "weekly"
+    if freq not in ("weekly", "monthly"):
+        freq = "weekly"
     return ProfileResponse(
         student_id=student_id,
+        name=str(profile.get("name") or "Student"),
+        email=str(profile.get("email") or ""),
+        field_of_study=profile.get("field_of_study"),
+        exam_date=profile.get("exam_date"),
+        report_frequency=freq,  # type: ignore[arg-type]
         weak_topics=list(profile.get("weak_topics") or []),
         topic_scores=scores,
         sessions_completed=int(profile.get("sessions_completed", 0)),
         last_session_at=profile.get("last_session_at"),
         readiness_percent=int(profile.get("readiness_percent", 0)),
+        recent_sessions=recent,
+        practice_progress=practice_progress,
+        session_summaries=session_summaries,
     )
 
 
@@ -72,7 +132,203 @@ async def list_calendar(
     container: AppContainer = Depends(get_container),
 ):
     events = await container.repo.list_calendar_events(student_id)
-    return [CalendarEventOut(**event) for event in events]
+    return [
+        CalendarEventOut(
+            id=str(event["id"]),
+            topic=str(event["topic"]),
+            start_iso=str(event["start_iso"]),
+            duration_minutes=int(event["duration_minutes"]),
+            external_event_id=event.get("external_event_id"),
+            status=str(event.get("status") or "suggested"),
+        )
+        for event in events
+    ]
+
+
+@router.post(
+    "/calendar/events/{event_id}/accept",
+    response_model=AcceptCalendarResponse,
+)
+async def accept_calendar_event(
+    event_id: str,
+    student_id: str = Depends(get_current_student_id),
+    container: AppContainer = Depends(get_container),
+):
+    events = await container.repo.list_calendar_events(student_id)
+    match = next((e for e in events if e["id"] == event_id), None)
+    if match is None:
+        raise HTTPException(status_code=404, detail="Calendar suggestion not found")
+
+    profile = await container.repo.get_profile(student_id)
+    user = await container.repo.get_user_by_id(student_id)
+    attendee = (
+        str((profile or {}).get("email") or "").strip()
+        or str((user or {}).get("email") or "").strip()
+        or None
+    )
+
+    # Prefer Google Calendar API when it works; never invent stub Google ids.
+    external_id = await container.calendar.create_study_event(
+        student_id=student_id,
+        topic=str(match["topic"]),
+        start_iso=str(match["start_iso"]),
+        duration_minutes=int(match["duration_minutes"]),
+        attendee_email=attendee,
+    )
+    cal_delivery = getattr(container.calendar, "last_delivery", None) or {}
+    cal_mode = str(cal_delivery.get("mode") or "unavailable")
+    details: list[str] = []
+    if cal_delivery.get("detail"):
+        details.append(str(cal_delivery["detail"]))
+    html_link = cal_delivery.get("html_link")
+
+    # Demo-ready path: always email a real .ics invite when SMTP is configured.
+    email_mode = "unavailable"
+    smtp_ready = bool(
+        container.settings.smtp_user.strip() and container.settings.smtp_password.strip()
+    )
+    if attendee and "@" in attendee and smtp_ready:
+        from app.domain.ics_invite import build_study_ics
+
+        organizer = (
+            container.settings.smtp_from
+            or container.settings.smtp_user
+            or "noreply@tele-exit.local"
+        )
+        ics = build_study_ics(
+            topic=str(match["topic"]),
+            start_iso=str(match["start_iso"]),
+            duration_minutes=int(match["duration_minutes"]),
+            attendee_email=attendee,
+            organizer_email=organizer,
+        )
+        when = str(match["start_iso"])
+        body = (
+            f"<p>Hi,</p>"
+            f"<p>Your Tele-Exit practice session was accepted:</p>"
+            f"<p><strong>{match['topic']}</strong><br>"
+            f"{when} · {match['duration_minutes']} minutes</p>"
+            f"<p>Open the attached <code>.ics</code> file (or tap Add to Calendar in Gmail) "
+            f"to put this on your Google Calendar.</p>"
+            f"<p>— Tele-Exit</p>"
+        )
+        try:
+            await container.email.send(
+                attendee,
+                f"Tele-Exit practice invite: {match['topic']}",
+                body,
+                ics_content=ics,
+            )
+            email_delivery = getattr(container.email, "last_delivery", None) or {}
+            email_mode = str(email_delivery.get("mode") or "unavailable")
+            if email_delivery.get("detail"):
+                details.append(str(email_delivery["detail"]))
+            if email_mode == "live" and not external_id:
+                external_id = f"ics-email-{event_id}"
+        except Exception as exc:  # noqa: BLE001
+            details.append(f"Invite email failed ({exc}).")
+            email_mode = "unavailable"
+    elif not attendee:
+        details.append("No student email on file — cannot send calendar invite.")
+    elif not smtp_ready:
+        details.append("SMTP_USER / SMTP_PASSWORD not set — cannot email calendar invite.")
+
+    live = cal_mode == "live" or email_mode == "live"
+    if not live:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Could not deliver a real calendar invite. "
+                + (" ".join(details) if details else "Configure SMTP for demo email delivery.")
+            ),
+        )
+
+    updated = await container.repo.accept_calendar_event(
+        student_id,
+        event_id,
+        external_event_id=external_id or None,
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Calendar suggestion not found")
+
+    if live and email_mode == "live" and cal_mode != "live":
+        summary = (
+            f"Calendar invite emailed to {attendee}. "
+            "Open it in Gmail and choose Add to Calendar."
+        )
+    elif live and cal_mode == "live":
+        summary = "Added to Google Calendar."
+        if email_mode == "live":
+            summary += f" Invite also emailed to {attendee}."
+    else:
+        summary = " ".join(details) or "Delivered."
+
+    return AcceptCalendarResponse(
+        event=CalendarRecommendationOut(
+            id=str(updated["id"]),
+            topic=str(updated["topic"]),
+            start_iso=str(updated["start_iso"]),
+            duration_minutes=int(updated["duration_minutes"]),
+            status=str(updated.get("status") or "accepted"),
+            external_event_id=updated.get("external_event_id"),
+        ),
+        delivery_mode="live",
+        delivery_detail=summary,
+        html_link=str(html_link) if html_link else None,
+    )
+
+
+@router.post("/session/wrap-up", response_model=SessionWrapUpResponse)
+async def session_wrap_up(
+    body: SessionWrapUpRequest,
+    student_id: str = Depends(get_current_student_id),
+    container: AppContainer = Depends(get_container),
+):
+    try:
+        result = await wrap_up_session(
+            student_id=student_id,
+            repo=container.repo,
+            llm=container.llm,
+            attempt_id=body.attempt_id,
+            exam_id=body.exam_id,
+            exam_title=body.exam_title,
+            question_ids=body.question_ids,
+            events=[e.model_dump() for e in body.events],
+            questions_visited=body.questions_visited,
+            persist_events=body.persist_events,
+        )
+    except ValueError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+
+    summary = result["summary"]
+    return SessionWrapUpResponse(
+        summary=SessionSummaryOut(
+            id=str(summary["id"]),
+            attempt_id=summary.get("attempt_id"),
+            exam_id=summary.get("exam_id"),
+            exam_title=str(summary.get("exam_title") or ""),
+            questions_visited=int(summary.get("questions_visited") or 0),
+            questions_attempted=int(summary.get("questions_attempted") or 0),
+            questions_correct=int(summary.get("questions_correct") or 0),
+            topics=list(summary.get("topics") or []),
+            summary_text=str(summary.get("summary_text") or ""),
+            created_at=str(summary.get("created_at") or ""),
+        ),
+        recommendations=[
+            CalendarRecommendationOut(
+                id=str(item["id"]),
+                topic=str(item["topic"]),
+                start_iso=str(item["start_iso"]),
+                duration_minutes=int(item["duration_minutes"]),
+                status=str(item.get("status") or "suggested"),
+                external_event_id=item.get("external_event_id"),
+            )
+            for item in result.get("recommendations") or []
+        ],
+        weak_topics=list(result.get("weak_topics") or []),
+        readiness_percent=int(result.get("readiness_percent") or 0),
+        sessions_completed=int(result.get("sessions_completed") or 0),
+    )
 
 
 @router.post("/session/start", response_model=SessionStartResponse)

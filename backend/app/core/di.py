@@ -17,9 +17,11 @@ from app.adapters.real.gemini_llm_adapter import GeminiLLMAdapter
 from app.adapters.real.gmail_email_adapter import GmailEmailAdapter
 from app.adapters.real.google_calendar_adapter import GoogleCalendarAdapter
 from app.adapters.real.livekit_adapter import LiveKitAdapter
+from app.adapters.real.smtp_email_adapter import SmtpEmailAdapter
 from app.adapters.real.sqlite_repository_adapter import SQLiteRepositoryAdapter
 from app.adapters.real.tavily_search_adapter import TavilySearchAdapter
 from app.adapters.real.vector_store_adapter import LocalVectorStoreAdapter
+from app.adapters.real.product_knowledge_adapter import ProductKnowledgeStore
 from app.adapters.real.youtube_adapter import YouTubeAdapter
 from app.auth.security import hash_password
 from app.config import (
@@ -44,6 +46,7 @@ class AppContainer:
     video_search: VideoSearchPort
     embedding: EmbeddingPort
     vector_store: VectorStorePort
+    product_knowledge: ProductKnowledgeStore
     repo: RepositoryPort
     calendar: CalendarPort
     email: EmailPort
@@ -60,10 +63,28 @@ class AppContainer:
 _container: AppContainer | None = None
 
 
+def _build_email(settings: Settings) -> EmailPort:
+    """Prefer SMTP (best for demos), then Workspace Gmail, else stub Gmail adapter."""
+    if settings.smtp_user.strip() and settings.smtp_password.strip():
+        return SmtpEmailAdapter(
+            host=settings.smtp_host,
+            port=settings.smtp_port,
+            username=settings.smtp_user.strip(),
+            password=settings.smtp_password,
+            from_email=(settings.smtp_from or settings.smtp_user).strip(),
+            use_tls=settings.smtp_use_tls,
+        )
+    return GmailEmailAdapter(
+        credentials_path=settings.google_credentials_path,
+        delegated_user=settings.google_delegated_user,
+    )
+
+
 def build_container(settings: Settings | None = None) -> AppContainer:
     settings = settings or get_settings()
 
     if settings.use_fakes:
+        # Local unit/integration tests only — never for demos.
         llm: LLMPort = FakeLLM()
         search: WebSearchPort = FakeSearch()
         video_search: VideoSearchPort = FakeVideoSearch()
@@ -71,15 +92,25 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         calendar: CalendarPort = FakeCalendar()
         email: EmailPort = FakeEmail()
         video_session: VideoSessionPort = FakeVideoSession()
+        # Allow real SMTP even under USE_FAKES when configured (rare hybrid demos).
+        if settings.smtp_user.strip() and settings.smtp_password.strip():
+            calendar = GoogleCalendarAdapter(
+                credentials_path=settings.google_credentials_path,
+                calendar_id=settings.google_calendar_id,
+                delegated_user=settings.google_delegated_user,
+            )
+            email = _build_email(settings)
     else:
         llm = GeminiLLMAdapter(api_key=settings.gemini_api_key)
         search = TavilySearchAdapter(api_key=settings.tavily_api_key)
         video_search = YouTubeAdapter(api_key=settings.youtube_api_key)
         embedding = GeminiEmbeddingAdapter(api_key=settings.gemini_api_key)
         calendar = GoogleCalendarAdapter(
-            credentials_path=settings.google_credentials_path
+            credentials_path=settings.google_credentials_path,
+            calendar_id=settings.google_calendar_id,
+            delegated_user=settings.google_delegated_user,
         )
-        email = GmailEmailAdapter(credentials_path=settings.google_credentials_path)
+        email = _build_email(settings)
         video_session = LiveKitAdapter(
             url=settings.livekit_url,
             api_key=settings.livekit_api_key,
@@ -88,6 +119,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
 
     repo = SQLiteRepositoryAdapter(db_path=settings.db_path)
     vector_store = LocalVectorStoreAdapter(db_path=settings.db_path)
+    product_knowledge = ProductKnowledgeStore(db_path=settings.db_path)
 
     return AppContainer(
         llm=llm,
@@ -95,6 +127,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         video_search=video_search,
         embedding=embedding,
         vector_store=vector_store,
+        product_knowledge=product_knowledge,
         repo=repo,
         calendar=calendar,
         email=email,
