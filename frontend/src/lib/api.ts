@@ -1,26 +1,27 @@
 /**
- * Tele-Exit API client (frontend-only build).
+ * Tele-Exit API client.
  *
- * All endpoints from the brief are represented here. The real backend
- * has not been wired yet, so each call returns realistic mocked data
- * after a small delay. When the backend is available, replace the body
- * of each function with a real `fetch(url, { headers: authHeader() })`
- * call — the signatures already match the endpoints.
+ * Auth (register / login / me) talks to the real backend.
+ * Other student/admin endpoints remain mocked until wired.
  *
- * The token is attached via `Authorization: Bearer <token>` on every
- * request (see authHeader). It is never logged and never placed in URLs.
+ * Token is sent as `Authorization: Bearer <token>` only — never in URLs
+ * or logs. Prefer the Vite `/api` proxy in local dev (same-origin).
  */
 
-import { getStoredToken, type Role, type User } from "./auth";
+import type { Role, User } from "./auth";
+import { getStoredToken } from "./auth-storage";
 
 // -- helpers -----------------------------------------------------------------
+
+/** Base URL: `VITE_API_URL` or same-origin `/api` (Vite proxy → backend). */
+const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") || "/api";
 
 function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));
 }
 
-export function authHeader(): Record<string, string> {
-  const t = getStoredToken();
+export function authHeader(token?: string | null): Record<string, string> {
+  const t = token ?? getStoredToken();
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
@@ -30,6 +31,74 @@ export class ApiError extends Error {
     super(message);
     this.status = status;
   }
+}
+
+async function parseErrorMessage(res: Response): Promise<string> {
+  try {
+    const data = await res.json();
+    const detail = data?.detail;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+      return detail
+        .map((d: { msg?: string }) => d?.msg)
+        .filter(Boolean)
+        .join(". ") || res.statusText;
+    }
+    if (typeof data?.message === "string") return data.message;
+  } catch {
+    // ignore non-JSON bodies
+  }
+  if (res.status === 401) return "Invalid email or password";
+  if (res.status === 409) return "Email already registered";
+  if (res.status >= 500) return "Server error — please try again shortly";
+  return res.statusText || "Request failed";
+}
+
+async function apiFetch<T>(
+  path: string,
+  init: RequestInit & { token?: string | null } = {},
+): Promise<T> {
+  const { token, headers, ...rest } = init;
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...rest,
+    headers: {
+      Accept: "application/json",
+      ...(rest.body ? { "Content-Type": "application/json" } : {}),
+      ...authHeader(token),
+      ...(headers as Record<string, string> | undefined),
+    },
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, await parseErrorMessage(res));
+  }
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
+interface MePayload {
+  student_id: string;
+  name: string;
+  email: string;
+  role: Role;
+  field_of_study?: string | null;
+  exam_date?: string | null;
+}
+
+function userFromMe(me: MePayload): User {
+  return {
+    id: me.student_id,
+    name: me.name,
+    email: me.email,
+    role: me.role === "admin" ? "admin" : "student",
+    fieldOfStudy: me.field_of_study ?? undefined,
+    examDate: me.exam_date ?? undefined,
+  };
+}
+
+/** Validate a JWT and return the current user (GET /auth/me). */
+export async function fetchMe(token: string): Promise<User> {
+  const me = await apiFetch<MePayload>("/auth/me", { method: "GET", token });
+  return userFromMe(me);
 }
 
 // -- domain types ------------------------------------------------------------
@@ -118,37 +187,28 @@ export interface RegisterInput {
 }
 
 export async function registerStudent(input: RegisterInput): Promise<{ user: User; token: string }> {
-  await sleep(500);
-  // TODO backend: POST /auth/register
-  const role: Role = input.email.startsWith("admin@") ? "admin" : "student";
-  return {
-    token: `mock.${Math.random().toString(36).slice(2)}.${Date.now()}`,
-    user: {
-      id: `stu_${Date.now()}`,
-      name: input.name,
+  const data = await apiFetch<{ student_id: string; access_token: string }>("/auth/register", {
+    method: "POST",
+    body: JSON.stringify({
       email: input.email,
-      role,
-      fieldOfStudy: input.fieldOfStudy,
-      examDate: input.examDate,
-    },
-  };
+      password: input.password,
+      name: input.name,
+      field_of_study: input.fieldOfStudy,
+      exam_date: input.examDate,
+      report_frequency: input.reportFrequency,
+    }),
+  });
+  const user = await fetchMe(data.access_token);
+  return { user, token: data.access_token };
 }
 
-export async function loginStudent(email: string, _password: string): Promise<{ user: User; token: string }> {
-  await sleep(450);
-  // TODO backend: POST /auth/login
-  const role: Role = email.startsWith("admin@") ? "admin" : "student";
-  return {
-    token: `mock.${Math.random().toString(36).slice(2)}.${Date.now()}`,
-    user: {
-      id: role === "admin" ? "adm_1" : "stu_1",
-      name: role === "admin" ? "Admin" : "Hanna Bekele",
-      email,
-      role,
-      fieldOfStudy: "Software Engineering",
-      examDate: MOCK_PROFILE.examDate,
-    },
-  };
+export async function loginStudent(email: string, password: string): Promise<{ user: User; token: string }> {
+  const data = await apiFetch<{ access_token: string }>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+  const user = await fetchMe(data.access_token);
+  return { user, token: data.access_token };
 }
 
 export async function getMyProfile(): Promise<StudentProfile> {
