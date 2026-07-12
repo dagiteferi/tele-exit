@@ -16,6 +16,7 @@ from app.routes import (
     question_router,
     report_router,
     student_router,
+    support_router,
     ws_router,
 )
 from app.schemas import HealthResponse
@@ -28,12 +29,14 @@ class RuntimeHealthResponse(HealthResponse):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.config import clear_settings_cache
+    from app.ingestion.product_docs_pipeline import ensure_product_knowledge
 
     clear_settings_cache()
     settings = get_settings()
     container = build_container(settings)
     app.state.container = container
     app.state.admin_id = await bootstrap_admin(container)
+    app.state.product_chunks = await ensure_product_knowledge(container.product_knowledge)
     yield
     reset_container()
     app.state.container = None
@@ -63,6 +66,7 @@ def create_app() -> FastAPI:
     app.include_router(question_router)
     app.include_router(student_router)
     app.include_router(report_router)
+    app.include_router(support_router)
     app.include_router(ws_router)
 
     @app.get("/health", response_model=RuntimeHealthResponse)

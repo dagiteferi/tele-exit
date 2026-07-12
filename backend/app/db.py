@@ -16,6 +16,7 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
     _migrate_exam_question_columns(connection)
     _migrate_exam_attempt_progress(connection)
     _migrate_calendar_and_summaries(connection)
+    _migrate_product_knowledge(connection)
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_exam_questions_exam ON exam_questions(exam_id)"
     )
@@ -84,6 +85,29 @@ def _migrate_calendar_and_summaries(connection: sqlite3.Connection) -> None:
             summary_text TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (student_id) REFERENCES users(id)
+        )
+        """
+    )
+
+
+def _migrate_product_knowledge(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS product_chunks (
+            id TEXT PRIMARY KEY,
+            source TEXT NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            body TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS product_embeddings (
+            chunk_id TEXT PRIMARY KEY,
+            embedding TEXT NOT NULL,
+            FOREIGN KEY (chunk_id) REFERENCES product_chunks(id) ON DELETE CASCADE
         )
         """
     )

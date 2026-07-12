@@ -20,6 +20,7 @@ from app.adapters.real.livekit_adapter import LiveKitAdapter
 from app.adapters.real.sqlite_repository_adapter import SQLiteRepositoryAdapter
 from app.adapters.real.tavily_search_adapter import TavilySearchAdapter
 from app.adapters.real.vector_store_adapter import LocalVectorStoreAdapter
+from app.adapters.real.product_knowledge_adapter import ProductKnowledgeStore
 from app.adapters.real.youtube_adapter import YouTubeAdapter
 from app.auth.security import hash_password
 from app.config import (
@@ -44,6 +45,7 @@ class AppContainer:
     video_search: VideoSearchPort
     embedding: EmbeddingPort
     vector_store: VectorStorePort
+    product_knowledge: ProductKnowledgeStore
     repo: RepositoryPort
     calendar: CalendarPort
     email: EmailPort
@@ -88,6 +90,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
 
     repo = SQLiteRepositoryAdapter(db_path=settings.db_path)
     vector_store = LocalVectorStoreAdapter(db_path=settings.db_path)
+    product_knowledge = ProductKnowledgeStore(db_path=settings.db_path)
 
     return AppContainer(
         llm=llm,
@@ -95,6 +98,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         video_search=video_search,
         embedding=embedding,
         vector_store=vector_store,
+        product_knowledge=product_knowledge,
         repo=repo,
         calendar=calendar,
         email=email,

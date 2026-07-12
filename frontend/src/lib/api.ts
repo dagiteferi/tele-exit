@@ -930,6 +930,152 @@ export async function practiceChat(
   }
 }
 
+/** Public home-page chatbot with SSE streaming tokens. */
+export async function supportChatStream(
+  message: string,
+  opts: {
+    useWeb?: boolean;
+    signal?: AbortSignal;
+    onToken: (text: string) => void;
+    onMeta?: (meta: {
+      agentUsed?: string | null;
+      sources: { title: string; source: string }[];
+    }) => void;
+  },
+): Promise<{ reply: string; agentUsed?: string | null; sources: { title: string; source: string }[] }> {
+  const res = await fetch(`${API_BASE}/support/chat/stream`, {
+    method: "POST",
+    headers: {
+      Accept: "text/event-stream",
+      "Content-Type": "application/json",
+      ...authHeader(),
+    },
+    body: JSON.stringify({
+      message,
+      use_web: opts.useWeb ?? false,
+    }),
+    signal: opts.signal,
+  });
+
+  if (!res.ok) {
+    throw new ApiError(res.status, await parseErrorMessage(res));
+  }
+  if (!res.body) {
+    throw new ApiError(502, "No stream from assistant.");
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let reply = "";
+  let agentUsed: string | null | undefined;
+  let sources: { title: string; source: string }[] = [];
+
+  const handleEvent = (raw: string) => {
+    const line = raw.trim();
+    if (!line.startsWith("data:")) return;
+    const payload = line.slice(5).trim();
+    if (!payload) return;
+    let event: {
+      type?: string;
+      text?: string;
+      message?: string;
+      agent_used?: string | null;
+      sources?: { title?: string; source?: string }[];
+      reply?: string;
+    };
+    try {
+      event = JSON.parse(payload);
+    } catch {
+      return;
+    }
+    if (event.type === "meta") {
+      sources = (event.sources || []).map((s) => ({
+        title: s.title || "",
+        source: s.source || "",
+      }));
+      agentUsed = event.agent_used;
+      opts.onMeta?.({ agentUsed, sources });
+      return;
+    }
+    if (event.type === "token" && event.text) {
+      reply += event.text;
+      opts.onToken(event.text);
+      return;
+    }
+    if (event.type === "error") {
+      throw new ApiError(502, event.message || "Assistant stream failed.");
+    }
+    if (event.type === "done") {
+      if (event.reply && !reply) reply = event.reply;
+      if (event.sources) {
+        sources = event.sources.map((s) => ({
+          title: s.title || "",
+          source: s.source || "",
+        }));
+      }
+      agentUsed = event.agent_used ?? agentUsed;
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() || "";
+    for (const part of parts) handleEvent(part);
+  }
+  if (buffer.trim()) handleEvent(buffer);
+
+  return { reply, agentUsed, sources };
+}
+
+/** Non-streaming fallback. */
+export async function supportChat(
+  message: string,
+  opts?: { useWeb?: boolean; timeoutMs?: number },
+): Promise<{
+  reply: string;
+  agentUsed?: string | null;
+  sources: { title: string; source: string }[];
+}> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), opts?.timeoutMs ?? 25_000);
+  try {
+    const data = await apiFetch<{
+      reply: string;
+      agent_used?: string | null;
+      sources?: { title?: string; source?: string }[];
+    }>("/support/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        message,
+        use_web: opts?.useWeb ?? false,
+      }),
+      signal: controller.signal,
+    });
+    return {
+      reply: data.reply,
+      agentUsed: data.agent_used,
+      sources: (data.sources || []).map((s) => ({
+        title: s.title || "",
+        source: s.source || "",
+      })),
+    };
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new ApiError(408, "Assistant timed out — try a shorter question.");
+    }
+    if (err instanceof TypeError) {
+      throw new ApiError(0, "Couldn't reach the assistant — check that the backend is running.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function saveAttemptProgress(
   attemptId: string,
   questionIndex: number,

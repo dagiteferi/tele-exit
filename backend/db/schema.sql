@@ -127,3 +127,18 @@ CREATE TABLE IF NOT EXISTS exam_attempts (
 
 CREATE INDEX IF NOT EXISTS idx_exams_field ON exams(field_of_study);
 CREATE INDEX IF NOT EXISTS idx_exam_attempts_student ON exam_attempts(student_id);
+
+-- Product / website support chatbot knowledge (separate from exam RAG)
+CREATE TABLE IF NOT EXISTS product_chunks (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS product_embeddings (
+    chunk_id TEXT PRIMARY KEY,
+    embedding TEXT NOT NULL,
+    FOREIGN KEY (chunk_id) REFERENCES product_chunks(id) ON DELETE CASCADE
+);
