@@ -1,18 +1,25 @@
 # Tele-Exit Frontend
 
-Responsive web client for Tele-Exit: student study flows, live study call, calendar Accept, and admin exam management.
+Web client for Tele-Exit: student study flows, live study call, calendar Accept, and admin exam management.
+
+<p>
+  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React" />
+  <img src="https://img.shields.io/badge/TanStack_Start-FF4154?logo=reactquery&logoColor=white" alt="TanStack" />
+  <img src="https://img.shields.io/badge/Vite-646CFF?logo=vite&logoColor=white" alt="Vite" />
+  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License" />
+</p>
 
 Built with **TanStack Start**, **React**, **Vite**, and **Tailwind CSS**.
 
 | | |
 |---|---|
-| **Demo video** | [Tele-Exit-demo.mp4](https://drive.google.com/file/d/1DPe5VJwmOw3D7YBCDjs0hBf8bFsUuxpI/view?usp=sharing) |
 | **Live app** | https://tele-exit.vercel.app/ |
 | **API Swagger** | https://heavenonearth7-tele-exit-backend.hf.space/docs |
+| **Walkthrough video** | [Tele-Exit-demo.mp4](https://drive.google.com/file/d/1DPe5VJwmOw3D7YBCDjs0hBf8bFsUuxpI/view?usp=sharing) |
 
-> Students only see exams for their registered **field of study**. Match admin upload field to the student department (e.g. both **Computer Science**).
+> Students only see exams for their registered **field of study**. Match the admin upload field to the student department.
 
-## Run locally
+## Quick start
 
 ```bash
 cd frontend
@@ -22,22 +29,29 @@ cp .env.example .env
 npm run dev
 ```
 
-App: http://localhost:3000  
+App: http://localhost:3000
 
-Vite proxies `/api` → `http://127.0.0.1:8000` when using same-origin fetch; `VITE_API_URL` points the client at the backend directly.
+Vite can proxy `/api` → `http://127.0.0.1:8000`. Prefer `VITE_API_URL` to point the client at the API directly.
 
 ## Environment
 
 | Variable | Description |
 |----------|-------------|
-| `VITE_API_URL` | Backend base URL (no trailing slash), e.g. `http://127.0.0.1:8000` |
+| `VITE_API_URL` | Backend base URL (no trailing slash) |
 
-## Main routes
+Examples:
+
+```bash
+VITE_API_URL=http://127.0.0.1:8000
+# VITE_API_URL=https://heavenonearth7-tele-exit-backend.hf.space
+```
+
+## Routes
 
 | Path | Audience | Purpose |
 |------|----------|---------|
 | `/` | Public | Landing, about, support chatbot |
-| `/login`, `/register` | Public | Auth + field/exam-date onboarding |
+| `/login`, `/register` | Public | Auth + field / exam-date onboarding |
 | `/forgot-password`, `/reset-password` | Public | Email reset flow |
 | `/dashboard` | Student | Readiness & shortcuts |
 | `/exams`, `/exams/$examId` | Student | Field-filtered practice / exam |
@@ -48,7 +62,7 @@ Vite proxies `/api` → `http://127.0.0.1:8000` when using same-origin fetch; `V
 | `/settings` | Student | Coach voice/avatar, reports |
 | `/admin/users`, `/admin/questions` | Admin | Users & uploads |
 
-## Key libraries (`src/lib`)
+## Libraries (`src/lib`)
 
 | Module | Role |
 |--------|------|
@@ -75,8 +89,9 @@ npm run preview   # preview build
 npm run lint      # ESLint
 ```
 
-## More docs
+## Further reading
 
-- [../README.md](../README.md)
-- [../docs/DEMO_GUIDE.md](../docs/DEMO_GUIDE.md)
-- [../docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md)
+- [Root README](../README.md)
+- [User guide](../docs/USAGE.md)
+- [Architecture](../docs/ARCHITECTURE.md)
+- [Contributing](../docs/CONTRIBUTING.md)

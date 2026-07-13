@@ -1,11 +1,21 @@
-# API Reference
+# API reference
 
-Base URL (local): `http://127.0.0.1:8000`  
-Frontend proxy: `/api` → backend  
+Interactive OpenAPI UI:
 
+| Environment | URL |
+|-------------|-----|
+| Local | http://127.0.0.1:8000/docs |
+| Production | https://heavenonearth7-tele-exit-backend.hf.space/docs |
+
+**Base URLs**
+
+| Environment | Base |
+|-------------|------|
+| Local | `http://127.0.0.1:8000` |
+| Production | `https://heavenonearth7-tele-exit-backend.hf.space` |
+
+Local Vite may proxy `/api` → the backend.  
 Auth: `Authorization: Bearer <access_token>` unless noted.
-
-Interactive docs when server is running: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
 ---
 
@@ -37,7 +47,7 @@ Interactive docs when server is running: [http://127.0.0.1:8000/docs](http://127
 | `GET` | `/students/me/profile` | Weak topics, scores, readiness, practice progress |
 | `PATCH` | `/students/me/settings` | `report_frequency`: `weekly` \| `monthly` |
 | `GET` | `/students/me/calendar` | Suggested & accepted study sessions |
-| `POST` | `/students/me/calendar/events/{id}/accept` | Accept suggestion → Google Calendar attempt + **SMTP `.ics` email** |
+| `POST` | `/students/me/calendar/events/{id}/accept` | Accept suggestion → Calendar attempt + **SMTP `.ics` email** |
 | `POST` | `/students/me/session/start` | LiveKit room + opening question |
 | `POST` | `/students/me/session/end` | Batch session events → update profile |
 | `POST` | `/students/me/session/wrap-up` | Summary + calendar recommendations |
@@ -102,7 +112,7 @@ Requires `role=admin`.
 
 ## WebSocket
 
-```
+```text
 WS /ws/call?token=<jwt>
 ```
 
@@ -127,7 +137,7 @@ The primary UI study call uses HTTP voice chat; WebSocket is the Spec v3 live pa
 
 ---
 
-## Error conventions
+## Errors
 
 | Status | Meaning |
 |--------|---------|
@@ -136,4 +146,4 @@ The primary UI study call uses HTTP voice chat; WebSocket is the Spec v3 live pa
 | `404` | Exam/attempt/event not found (or not owned) |
 | `503` | Calendar Accept could not deliver a real invite (SMTP/Google) |
 
-Full field-level models: Backend Spec v3 Appendix A in `docs/.specs/`.
+Full schemas: Backend Spec v3 Appendix A in `docs/.specs/`.

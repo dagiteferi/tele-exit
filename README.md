@@ -209,7 +209,7 @@ Quick path on the live app:
 3. Ask for a hint, progress check, web search, video, or schedule.  
 4. **Calendar → Accept** → check email for `.ics`.
 
-Full walkthrough: [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md)
+Full walkthrough: [docs/USAGE.md](docs/USAGE.md)
 
 ---
 
@@ -267,7 +267,7 @@ Set Space secrets for JWT, Gemini, SMTP, admin bootstrap, `CORS_ORIGINS` (includ
 ```text
 tele-exit/
 ├── README.md
-├── docs/                      # Architecture, API, demo, assignment
+├── docs/                      # Architecture, API, usage, contributing
 ├── scripts/                   # HF deploy helper
 ├── backend/
 │   ├── app/                   # FastAPI app (domain, ports, adapters, routes)
@@ -289,9 +289,10 @@ tele-exit/
 | Doc | Description |
 |-----|-------------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design & agents |
-| [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md) | Live / video demo script |
 | [docs/API.md](docs/API.md) | HTTP & WebSocket reference |
-| [docs/ASSIGNMENT.md](docs/ASSIGNMENT.md) | Assignment mapping |
+| [docs/USAGE.md](docs/USAGE.md) | End-to-end user walkthrough |
+| [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | Develop & contribute |
+| [docs/ASSIGNMENT.md](docs/ASSIGNMENT.md) | Design rationale |
 | [docs/README.md](docs/README.md) | Docs index |
 | [backend/README.md](backend/README.md) | Backend setup |
 | [frontend/README.md](frontend/README.md) | Frontend setup |
@@ -310,7 +311,7 @@ pytest -q
 
 ## Contributing
 
-Contributions are welcome.
+Contributions are welcome. See **[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)** for setup and PR guidelines.
 
 1. Fork the repo  
 2. Create a feature branch (`git checkout -b feature/my-change`)  

@@ -1,21 +1,31 @@
-# Documentation index
+# Documentation
 
-| Document | Audience | Description |
-|----------|----------|-------------|
-| [../README.md](../README.md) | Everyone | Project overview & quick start |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Engineers / reviewers | System design, agents, data flow |
-| [DEMO_GUIDE.md](DEMO_GUIDE.md) | Presenters | Live / video demo script |
-| [API.md](API.md) | Engineers | HTTP & WebSocket endpoints |
-| [ASSIGNMENT.md](ASSIGNMENT.md) | Graders | Mapping to the AI Automation brief |
-| [.specs/Tele-Exit-Backend-Spec-v3 .md](.specs/Tele-Exit-Backend-Spec-v3%20.md) | Implementers | Full backend specification |
-| [../backend/README.md](../backend/README.md) | Backend | Setup, env, tests |
-| [../frontend/README.md](../frontend/README.md) | Frontend | Setup, routes, scripts |
-| [../backend/docs/product/website.md](../backend/docs/product/website.md) | Product | Site copy used by support chatbot |
+Welcome to the Tele-Exit docs. Start with the [root README](../README.md) for a project overview, then dive into the guides below.
 
-## Live links
+## Guides
+
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System design, hexagonal layers, agents, data flow |
+| [API.md](API.md) | HTTP & WebSocket reference |
+| [USAGE.md](USAGE.md) | End-to-end walkthrough (students, admins, study call) |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to develop and contribute |
+| [ASSIGNMENT.md](ASSIGNMENT.md) | Original assignment mapping / design rationale |
+| [../backend/README.md](../backend/README.md) | Backend setup, env, tests |
+| [../frontend/README.md](../frontend/README.md) | Frontend setup, routes, scripts |
+| [../backend/docs/product/website.md](../backend/docs/product/website.md) | Product copy used by the support chatbot |
+
+## Specs
+
+| Document | Description |
+|----------|-------------|
+| [`.specs/Tele-Exit-Backend-Spec-v3 .md`](.specs/Tele-Exit-Backend-Spec-v3%20.md) | Full backend specification (v3) |
+
+## Links
 
 | | |
 |---|---|
-| **Demo video** | [Tele-Exit-demo.mp4](https://drive.google.com/file/d/1DPe5VJwmOw3D7YBCDjs0hBf8bFsUuxpI/view?usp=sharing) |
-| **Web app** | https://tele-exit.vercel.app/ |
-| **API Swagger** | https://heavenonearth7-tele-exit-backend.hf.space/docs |
+| Repository | https://github.com/dagiteferi/tele-exit |
+| Live app | https://tele-exit.vercel.app/ |
+| API Swagger | https://heavenonearth7-tele-exit-backend.hf.space/docs |
+| Demo video | [Google Drive](https://drive.google.com/file/d/1DPe5VJwmOw3D7YBCDjs0hBf8bFsUuxpI/view?usp=sharing) |
